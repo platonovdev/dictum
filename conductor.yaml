@@ -1,0 +1,36 @@
+port: 4748
+dashboardUrl: http://localhost:4747
+access:
+  requireAuth: false
+  defaultRole: operator
+  trustedHeaders:
+    enabled: false
+    provider: cloudflare-access
+    emailHeader: Cf-Access-Authenticated-User-Email
+    jwtHeader: Cf-Access-Jwt-Assertion
+preferences:
+  onboardingAcknowledged: true
+  codingAgent: codex
+  ide: vscode
+  markdownEditor: obsidian
+  modelAccess:
+    claudeCode: max
+    codex: chatgpt
+    gemini: oauth
+    qwenCode: oauth
+  notifications:
+    soundEnabled: true
+    soundFile: abstract-sound-4
+projects:
+  onebtnvoice:
+    name: onebtnvoice
+    path: /Users/maksim/Documents/github/oneBtnVoice
+    repo: oneBtnVoice
+    agent: codex
+    defaultBranch: main
+    sessionPrefix: bv
+    workspace: local
+    runtime: ttyd
+    agentConfig: {}
+    boardDir: onebtnvoice
+_generatedFromWorkspace: 2026-03-20T10:46:23.580403+00:00
