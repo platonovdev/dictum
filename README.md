@@ -1,6 +1,6 @@
-# OneBtnVoice
+# Dictum
 
-`OneBtnVoice` is a native macOS dictation utility for Apple Silicon. Hold a global hotkey, speak, release the key, and the app transcribes locally with Whisper and pastes the result into the active text field.
+`Dictum` is a native macOS dictation utility for Apple Silicon. Hold a global hotkey, speak, release the key, and the app transcribes locally with Whisper and pastes the result into the active text field.
 
 ## Current status
 
@@ -40,11 +40,11 @@ xcode-select --install
 
 ```bash
 git clone <your-repo-url>
-cd oneBtnVoice
+cd dictum
 ./Scripts/install.sh
 ```
 
-4. Launch `OneBtnVoice.app`.
+4. Launch `Dictum.app`.
 5. Open Settings from the menu bar and grant permissions.
 6. Focus any normal text field, hold `Right Command`, speak, then release it to insert the transcript.
 
@@ -85,7 +85,7 @@ The install script now does this automatically if your Mac already has an `Apple
 You can also force a specific identity:
 
 ```bash
-ONEBTNVOICE_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./Scripts/install.sh
+DICTUM_SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./Scripts/install.sh
 ```
 
 To see available code-signing identities on your Mac:

@@ -14,7 +14,7 @@ public final class HistoryWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "OneBtnVoice History"
+        window.title = "Dictum History"
         window.isReleasedWhenClosed = false
         window.center()
         window.contentMinSize = NSSize(width: 620, height: 420)

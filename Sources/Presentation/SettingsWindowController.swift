@@ -20,7 +20,7 @@ public final class SettingsWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "OneBtnVoice Settings"
+        window.title = "Dictum Settings"
         window.isReleasedWhenClosed = false
         window.center()
         window.contentView = NSHostingView(rootView: rootView)

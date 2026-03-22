@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "OneBtnVoice",
+    name: "Dictum",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "OneBtnVoice", targets: ["OneBtnVoice"])
+        .executable(name: "Dictum", targets: ["Dictum"])
     ],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.16.0")
@@ -33,7 +33,7 @@ let package = Package(
             dependencies: ["Domain", "Application"]
         ),
         .executableTarget(
-            name: "OneBtnVoice",
+            name: "Dictum",
             dependencies: ["Domain", "Application", "Infrastructure", "Presentation"],
             path: "Sources/OneBtnVoiceApp",
             swiftSettings: [

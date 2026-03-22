@@ -17,7 +17,7 @@ public final class MainAppWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "OneBtnVoice"
+        window.title = "Dictum"
         window.isReleasedWhenClosed = false
         window.center()
         window.contentMinSize = NSSize(width: 820, height: 520)

@@ -16,7 +16,7 @@ public final class MenuBarController: NSObject {
         super.init()
 
         if let button = statusItem.button {
-            button.title = "1BV"
+            button.title = "Dictum"
         }
 
         let menu = NSMenu()
@@ -46,7 +46,7 @@ public final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit OneBtnVoice", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Dictum", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 

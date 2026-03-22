@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-APP_NAME="OneBtnVoice"
+APP_NAME="Dictum"
 SYSTEM_APP="/Applications/$APP_NAME.app"
 USER_APP="$HOME/Applications/$APP_NAME.app"
 

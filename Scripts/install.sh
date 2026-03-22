@@ -2,12 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="OneBtnVoice"
+APP_NAME="Dictum"
 BUILD_DIR="$ROOT_DIR/.build/release"
 APP_BUNDLE="$ROOT_DIR/.build/$APP_NAME.app"
 DEST_APP="/Applications/$APP_NAME.app"
 USER_APP="$HOME/Applications/$APP_NAME.app"
-SIGN_IDENTITY="${ONEBTNVOICE_SIGN_IDENTITY:-}"
+SIGN_IDENTITY="${DICTUM_SIGN_IDENTITY:-${ONEBTNVOICE_SIGN_IDENTITY:-}}"
 SIGN_IDENTITY_NAME=""
 XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 

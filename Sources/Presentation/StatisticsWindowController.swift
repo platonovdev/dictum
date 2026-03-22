@@ -14,7 +14,7 @@ public final class StatisticsWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "OneBtnVoice Statistics"
+        window.title = "Dictum Statistics"
         window.isReleasedWhenClosed = false
         window.center()
         window.contentView = NSHostingView(rootView: rootView)

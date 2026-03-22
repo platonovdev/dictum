@@ -2,12 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_PATH="/Applications/OneBtnVoice.app"
-APP_BUNDLE_ID="com.onebtnvoice.app"
+APP_PATH="/Applications/Dictum.app"
+APP_BUNDLE_ID="com.dictum.app"
 
 echo "Stopping running app if needed..."
 osascript -e "tell application id \"$APP_BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
-pkill -x OneBtnVoice >/dev/null 2>&1 || true
+pkill -x Dictum >/dev/null 2>&1 || true
 sleep 0.4
 
 echo "Rebuilding and reinstalling..."

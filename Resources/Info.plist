@@ -5,13 +5,13 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>OneBtnVoice</string>
+    <string>Dictum</string>
     <key>CFBundleIdentifier</key>
-    <string>com.onebtnvoice.app</string>
+    <string>com.dictum.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>OneBtnVoice</string>
+    <string>Dictum</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -25,6 +25,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>OneBtnVoice needs microphone access to transcribe speech locally.</string>
+    <string>Dictum needs microphone access to transcribe speech locally.</string>
 </dict>
 </plist>
