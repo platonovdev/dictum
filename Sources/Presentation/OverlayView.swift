@@ -59,11 +59,9 @@ public struct OverlayView: View {
         case .processing, .preparing:
             ProcessingOrbView(accent: processingAccentColor)
                 .frame(width: 22, height: 22)
-                .frame(width: 120, height: 28, alignment: .leading)
         case .error:
             ErrorOrbView()
                 .frame(width: 22, height: 22)
-                .frame(width: 120, height: 28, alignment: .leading)
         }
     }
 

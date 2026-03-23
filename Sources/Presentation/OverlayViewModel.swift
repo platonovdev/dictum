@@ -153,11 +153,11 @@ public final class OverlayViewModel: ObservableObject {
         }
         noiseFloor = min(max(noiseFloor, 0.002), 0.08)
 
-        let normalized = min(max((volume - noiseFloor - 0.006) / 0.16, 0), 1)
+        let normalized = min(max((volume - noiseFloor) / (1.0 - noiseFloor), 0), 1)
 
         let barHeight: Float
-        if normalized > 0.05 {
-            barHeight = normalized
+        if normalized > 0.02 {
+            barHeight = pow(normalized, 1.6)
         } else {
             barHeight = WaveformConstants.idleLevel
         }
