@@ -254,16 +254,7 @@ public struct HistoryView: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color(nsColor: .controlBackgroundColor),
-                        Color(nsColor: .underPageBackgroundColor)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .fill(Color(nsColor: .controlBackgroundColor))
     }
 
     private var screenBackground: Color {

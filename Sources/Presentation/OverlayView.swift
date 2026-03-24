@@ -28,7 +28,6 @@ public struct OverlayView: View {
                 .strokeBorder(borderColor, lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: Color.black.opacity(0.16), radius: 12, y: 4)
         .animation(.easeOut(duration: 0.14), value: viewModel.visualState)
     }
 
@@ -78,16 +77,7 @@ public struct OverlayView: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color(nsColor: .windowBackgroundColor),
-                        Color(nsColor: .controlBackgroundColor)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .fill(Color(nsColor: .windowBackgroundColor))
     }
 
     private var labelColor: Color {
