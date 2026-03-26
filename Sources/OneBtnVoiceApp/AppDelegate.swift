@@ -19,6 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             let settings = (try? await container.loadSettingsUseCase.execute()) ?? .default
             registerHotkey(with: settings.hotkey)
+            container.transcriptionEngine.updateSettings(
+                apiKey: settings.cloudAPIKey,
+                baseURL: settings.cloudBaseURL,
+                durationThreshold: settings.cloudDurationThreshold
+            )
             await container.coordinator.prepare()
             if !container.permissionService.currentSnapshot().missingRequiredPermissions.isEmpty {
                 mainAppWindowController.show(section: .settings)
@@ -80,6 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func bindSettingsUpdates() {
         container.settingsViewModel.onSettingsSaved = { [weak self] settings in
             self?.registerHotkey(with: settings.hotkey)
+            self?.container.transcriptionEngine.updateSettings(
+                apiKey: settings.cloudAPIKey,
+                baseURL: settings.cloudBaseURL,
+                durationThreshold: settings.cloudDurationThreshold
+            )
             Task { @MainActor in
                 await self?.container.coordinator.reloadSettings()
             }

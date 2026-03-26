@@ -34,19 +34,49 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var autoPaste: Bool
     public var launchAtLogin: Bool
     public var overlayPosition: OverlayPosition
+    public var cloudAPIKey: String
+    public var cloudBaseURL: String
+    public var cloudDurationThreshold: Double
 
     public init(
         modelIdentifier: String,
         hotkey: HotkeyConfiguration,
         autoPaste: Bool,
         launchAtLogin: Bool,
-        overlayPosition: OverlayPosition
+        overlayPosition: OverlayPosition,
+        cloudAPIKey: String = "",
+        cloudBaseURL: String = "https://api.openai.com",
+        cloudDurationThreshold: Double = 20.0
     ) {
         self.modelIdentifier = modelIdentifier
         self.hotkey = hotkey
         self.autoPaste = autoPaste
         self.launchAtLogin = launchAtLogin
         self.overlayPosition = overlayPosition
+        self.cloudAPIKey = cloudAPIKey
+        self.cloudBaseURL = cloudBaseURL
+        self.cloudDurationThreshold = cloudDurationThreshold
+    }
+
+    public var isCloudEnabled: Bool {
+        !cloudAPIKey.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case modelIdentifier, hotkey, autoPaste, launchAtLogin, overlayPosition
+        case cloudAPIKey, cloudBaseURL, cloudDurationThreshold
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        modelIdentifier = try container.decode(String.self, forKey: .modelIdentifier)
+        hotkey = try container.decode(HotkeyConfiguration.self, forKey: .hotkey)
+        autoPaste = try container.decode(Bool.self, forKey: .autoPaste)
+        launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
+        overlayPosition = try container.decode(OverlayPosition.self, forKey: .overlayPosition)
+        cloudAPIKey = try container.decodeIfPresent(String.self, forKey: .cloudAPIKey) ?? ""
+        cloudBaseURL = try container.decodeIfPresent(String.self, forKey: .cloudBaseURL) ?? "https://api.openai.com"
+        cloudDurationThreshold = try container.decodeIfPresent(Double.self, forKey: .cloudDurationThreshold) ?? 20.0
     }
 
     public static let `default` = AppSettings(
@@ -173,15 +203,31 @@ public struct TranscriptChunk: Equatable, Sendable {
     }
 }
 
+public enum TranscriptionBackend: String, Codable, Equatable, Sendable {
+    case local
+    case cloud
+    case cloudWithLocalFallback
+}
+
 public struct FinalTranscript: Equatable, Sendable {
     public var text: String
     public var duration: TimeInterval
     public var language: String?
+    public var backend: TranscriptionBackend
+    public var transcriptionDuration: TimeInterval
 
-    public init(text: String, duration: TimeInterval, language: String?) {
+    public init(
+        text: String,
+        duration: TimeInterval,
+        language: String?,
+        backend: TranscriptionBackend = .local,
+        transcriptionDuration: TimeInterval = 0
+    ) {
         self.text = text
         self.duration = duration
         self.language = language
+        self.backend = backend
+        self.transcriptionDuration = transcriptionDuration
     }
 }
 
@@ -212,6 +258,8 @@ public struct DictationHistoryEntry: Identifiable, Codable, Equatable, Sendable 
     public var audioArtifactPath: String?
     public var retryCount: Int
     public var failureStage: DictationFailureStage?
+    public var transcriptionBackend: TranscriptionBackend?
+    public var transcriptionDuration: TimeInterval?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -226,6 +274,8 @@ public struct DictationHistoryEntry: Identifiable, Codable, Equatable, Sendable 
         case audioArtifactPath
         case retryCount
         case failureStage
+        case transcriptionBackend
+        case transcriptionDuration
     }
 
     public init(
@@ -240,7 +290,9 @@ public struct DictationHistoryEntry: Identifiable, Codable, Equatable, Sendable 
         statusDetail: String? = nil,
         audioArtifactPath: String? = nil,
         retryCount: Int = 0,
-        failureStage: DictationFailureStage? = nil
+        failureStage: DictationFailureStage? = nil,
+        transcriptionBackend: TranscriptionBackend? = nil,
+        transcriptionDuration: TimeInterval? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -254,6 +306,8 @@ public struct DictationHistoryEntry: Identifiable, Codable, Equatable, Sendable 
         self.audioArtifactPath = audioArtifactPath
         self.retryCount = retryCount
         self.failureStage = failureStage
+        self.transcriptionBackend = transcriptionBackend
+        self.transcriptionDuration = transcriptionDuration
     }
 
     public init(from decoder: any Decoder) throws {
@@ -272,6 +326,8 @@ public struct DictationHistoryEntry: Identifiable, Codable, Equatable, Sendable 
         audioArtifactPath = try container.decodeIfPresent(String.self, forKey: .audioArtifactPath)
         retryCount = try container.decodeIfPresent(Int.self, forKey: .retryCount) ?? 0
         failureStage = try container.decodeIfPresent(DictationFailureStage.self, forKey: .failureStage)
+        transcriptionBackend = try container.decodeIfPresent(TranscriptionBackend.self, forKey: .transcriptionBackend)
+        transcriptionDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .transcriptionDuration)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -288,6 +344,8 @@ public struct DictationHistoryEntry: Identifiable, Codable, Equatable, Sendable 
         try container.encodeIfPresent(audioArtifactPath, forKey: .audioArtifactPath)
         try container.encode(retryCount, forKey: .retryCount)
         try container.encodeIfPresent(failureStage, forKey: .failureStage)
+        try container.encodeIfPresent(transcriptionBackend, forKey: .transcriptionBackend)
+        try container.encodeIfPresent(transcriptionDuration, forKey: .transcriptionDuration)
     }
 }
 
@@ -303,7 +361,9 @@ public extension DictationHistoryEntry {
         statusDetail: String? = nil,
         audioArtifactPath: String? = nil,
         retryCount: Int = 0,
-        failureStage: DictationFailureStage? = nil
+        failureStage: DictationFailureStage? = nil,
+        transcriptionBackend: TranscriptionBackend? = nil,
+        transcriptionDuration: TimeInterval? = nil
     ) -> DictationHistoryEntry {
         let cleaned = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         return DictationHistoryEntry(
@@ -318,7 +378,9 @@ public extension DictationHistoryEntry {
             statusDetail: statusDetail,
             audioArtifactPath: audioArtifactPath,
             retryCount: retryCount,
-            failureStage: failureStage
+            failureStage: failureStage,
+            transcriptionBackend: transcriptionBackend,
+            transcriptionDuration: transcriptionDuration
         )
     }
 

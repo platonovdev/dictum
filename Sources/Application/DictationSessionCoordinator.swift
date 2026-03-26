@@ -335,7 +335,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                             duration: finalTranscript.duration,
                             language: finalTranscript.language,
                             status: historyStatus(for: result),
-                            statusDetail: historyStatusDetail(for: result)
+                            statusDetail: historyStatusDetail(for: result),
+                            transcriptionBackend: finalTranscript.backend,
+                            transcriptionDuration: finalTranscript.transcriptionDuration
                         )
                     )
                     await audioArchive.deleteArchivedAudio(at: archivedAudio.fileURL.path)
@@ -362,7 +364,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                         transcript: cleaned,
                         duration: finalTranscript.duration,
                         language: finalTranscript.language,
-                        status: .savedWithoutInsertion
+                        status: .savedWithoutInsertion,
+                        transcriptionBackend: finalTranscript.backend,
+                        transcriptionDuration: finalTranscript.transcriptionDuration
                     )
                 )
                 await audioArchive.deleteArchivedAudio(at: archivedAudio.fileURL.path)
