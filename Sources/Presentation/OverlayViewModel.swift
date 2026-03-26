@@ -22,6 +22,7 @@ public final class OverlayViewModel: ObservableObject {
 
     @Published public private(set) var isVisible = false
     @Published public private(set) var visualState: OverlayVisualState = .recording
+    @Published public private(set) var isLockedMode = false
     @Published public private(set) var statusText: String?
     /// Scrolling timeline buffer — newest bar at the end (right side).
     @Published public private(set) var waveformLevels = Array(
@@ -69,6 +70,7 @@ public final class OverlayViewModel: ObservableObject {
         case .idle:
             isVisible = false
             visualState = .recording
+            isLockedMode = false
             statusText = nil
             timerText = "0:00"
             stopElapsedTimer()
@@ -77,14 +79,16 @@ public final class OverlayViewModel: ObservableObject {
         case .preparingModel(let status):
             isVisible = true
             visualState = .preparing
+            isLockedMode = false
             statusText = status.title
             timerText = "0:00"
             stopElapsedTimer()
             stopWaveformTicker()
             resetWaveform()
-        case .recording(let startedAt):
+        case .recording(let startedAt, let isHandsFree):
             isVisible = true
             visualState = .recording
+            isLockedMode = isHandsFree
             statusText = nil
             resetWaveform()
             startElapsedTimer(from: startedAt)
@@ -92,22 +96,22 @@ public final class OverlayViewModel: ObservableObject {
         case .transcribing:
             isVisible = true
             visualState = .processing
+            isLockedMode = false
             statusText = "Transcribing..."
-            timerText = "0:00"
             stopElapsedTimer()
             stopWaveformTicker()
         case .inserting:
             isVisible = true
             visualState = .processing
+            isLockedMode = false
             statusText = "Inserting..."
-            timerText = "0:00"
             stopElapsedTimer()
             stopWaveformTicker()
         case .error(let error):
             isVisible = true
             visualState = .error
+            isLockedMode = false
             statusText = error.userFacingDescription
-            timerText = "0:00"
             stopElapsedTimer()
             stopWaveformTicker()
         }

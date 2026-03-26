@@ -46,6 +46,11 @@ public final class QuartzHotkeyService: GlobalHotkeyService {
         configuration: HotkeyConfiguration,
         handler: @escaping @Sendable (HotkeyEvent) -> Void
     ) {
+        if event.type == .keyDown, event.keyCode == 53 {
+            handler(.escapePressed)
+            return
+        }
+
         switch configuration.kind {
         case .rightCommandHold:
             handleRightCommand(event: event, handler: handler)

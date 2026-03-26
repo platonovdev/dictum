@@ -87,6 +87,8 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             await handleHotkeyPressed()
         case .released:
             await handleHotkeyReleased()
+        case .escapePressed:
+            await handleEscapePressed()
         }
     }
 
@@ -485,11 +487,24 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         case .awaitingSecondPress:
             cancelHotkeyDecisionTask()
             hotkeyGestureState = .handsFree
+            if case .recording(let startedAt, _) = state {
+                transition(to: .recording(startedAt: startedAt, isHandsFree: true))
+            }
         case .handsFree:
             cancelHotkeyDecisionTask()
             hotkeyGestureState = .idle
             await stopDictation()
         }
+    }
+
+    private func handleEscapePressed() async {
+        guard hotkeyGestureState == .handsFree, case .recording = state else {
+            return
+        }
+        cancelHotkeyDecisionTask()
+        hotkeyGestureState = .idle
+        hotkeyPressStartedAt = nil
+        await resetSession()
     }
 
     private func handleHotkeyReleased() async {

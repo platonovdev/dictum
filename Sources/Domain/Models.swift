@@ -436,12 +436,13 @@ public enum InsertionResult: Equatable, Sendable {
 public enum HotkeyEvent: Equatable, Sendable {
     case pressed
     case released
+    case escapePressed
 }
 
 public enum DictationSessionState: Equatable, Sendable {
     case idle(lastTranscript: String? = nil, insertionResult: InsertionResult? = nil)
     case preparingModel(ModelPreparationStatus)
-    case recording(startedAt: Date)
+    case recording(startedAt: Date, isHandsFree: Bool = false)
     case transcribing(partialText: String?)
     case inserting(text: String)
     case error(AppError)
