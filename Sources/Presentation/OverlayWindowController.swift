@@ -27,6 +27,7 @@ public final class OverlayWindowController {
         let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.sceneBridgingOptions = []
         panel.contentView = hostingView
 
         viewModel.$visualState

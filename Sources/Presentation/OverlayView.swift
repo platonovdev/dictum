@@ -4,6 +4,8 @@ import SwiftUI
 public struct OverlayView: View {
     @ObservedObject private var viewModel: OverlayViewModel
 
+    private static let morphAnimation: Animation = .spring(duration: 0.4, bounce: 0.12)
+
     public init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
     }
@@ -13,22 +15,33 @@ public struct OverlayView: View {
             visualIndicator
 
             Text(displayText)
-                .font(displayFont)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(labelColor)
+                .foregroundStyle(Color(nsColor: .labelColor))
                 .lineLimit(1)
-                .minimumScaleFactor(0.72)
                 .fixedSize()
+                .contentTransition(.interpolate)
+
+            if viewModel.isLockedMode {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(cardBackground)
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor))
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(borderColor, lineWidth: 1)
+                .strokeBorder(borderColor, lineWidth: viewModel.isLockedMode ? 1.5 : 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .animation(.easeOut(duration: 0.14), value: viewModel.visualState)
+        .compositingGroup()
+        .animation(Self.morphAnimation, value: viewModel.visualState)
+        .animation(Self.morphAnimation, value: viewModel.isLockedMode)
     }
 
     private var displayText: String {
@@ -40,27 +53,26 @@ public struct OverlayView: View {
         }
     }
 
-    private var displayFont: Font {
-        switch viewModel.visualState {
-        case .recording:
-            return .system(size: 24, weight: .semibold, design: .rounded)
-        case .processing, .preparing, .error:
-            return .system(size: 15, weight: .semibold, design: .rounded)
-        }
-    }
-
     @ViewBuilder
     private var visualIndicator: some View {
-        switch viewModel.visualState {
-        case .recording:
-            MonochromeWaveformView(levels: viewModel.waveformLevels)
-                .frame(width: 120, height: 28)
-        case .processing, .preparing:
-            ProcessingOrbView(accent: processingAccentColor)
-                .frame(width: 22, height: 22)
-        case .error:
-            ErrorOrbView()
-                .frame(width: 22, height: 22)
+        ZStack {
+            if viewModel.visualState == .recording {
+                MonochromeWaveformView(levels: viewModel.waveformLevels)
+                    .frame(width: 120, height: 28)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+            }
+
+            if viewModel.visualState == .processing || viewModel.visualState == .preparing {
+                ProcessingOrbView(accent: processingAccentColor)
+                    .frame(width: 22, height: 22)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+            }
+
+            if viewModel.visualState == .error {
+                ErrorOrbView()
+                    .frame(width: 22, height: 22)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+            }
         }
     }
 
@@ -73,17 +85,10 @@ public struct OverlayView: View {
         }
     }
 
-    private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var labelColor: Color {
-        Color(nsColor: .labelColor)
-    }
-
     private var borderColor: Color {
-        Color(nsColor: .separatorColor).opacity(0.4)
+        viewModel.isLockedMode
+            ? Color(nsColor: .controlAccentColor).opacity(0.5)
+            : Color(nsColor: .separatorColor).opacity(0.4)
     }
 }
 
@@ -100,7 +105,6 @@ private struct MonochromeWaveformView: View {
             let centerY = size.height / 2
             let count = levels.count
 
-            // Draw bars right-aligned: newest bar flush with right edge.
             for i in 0..<count {
                 let level = levels[i]
                 let intensity = CGFloat(min(max(level, 0), 1))
@@ -121,7 +125,6 @@ private struct MonochromeWaveformView: View {
             }
         }
         .clipped()
-        .animation(.linear(duration: 0.06), value: levels.count)
     }
 }
 
