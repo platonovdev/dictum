@@ -45,9 +45,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.mainAppWindowController.show(section: .statistics)
         }
 
-        menuBarController.onRequestPermissions = { [weak self] in
-            self?.container.permissionsViewModel.requestPermissions()
-            self?.mainAppWindowController.show(section: .settings)
+        menuBarController.onCopyLastTranscription = { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                let entries = await self.container.coordinator.loadHistoryEntries()
+                guard let latest = entries.sorted(by: { $0.startedAt > $1.startedAt }).first,
+                      !latest.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return
+                }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(latest.transcript.trimmingCharacters(in: .whitespacesAndNewlines), forType: .string)
+            }
         }
 
         menuBarController.onResetSession = { [weak self] in

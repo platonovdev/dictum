@@ -5,7 +5,7 @@ public final class MenuBarController: NSObject {
     public var onOpenSettings: (() -> Void)?
     public var onOpenHistory: (() -> Void)?
     public var onOpenStatistics: (() -> Void)?
-    public var onRequestPermissions: (() -> Void)?
+    public var onCopyLastTranscription: (() -> Void)?
     public var onResetSession: (() -> Void)?
     public var onRestartApp: (() -> Void)?
     public var onQuit: (() -> Void)?
@@ -16,7 +16,10 @@ public final class MenuBarController: NSObject {
         super.init()
 
         if let button = statusItem.button {
-            button.title = "Dictum"
+            button.image = NSImage(
+                systemSymbolName: "mic",
+                accessibilityDescription: "Dictum"
+            )
         }
 
         let menu = NSMenu()
@@ -32,9 +35,9 @@ public final class MenuBarController: NSObject {
         statisticsItem.target = self
         menu.addItem(statisticsItem)
 
-        let permissionsItem = NSMenuItem(title: "Request Permissions", action: #selector(requestPermissions), keyEquivalent: "")
-        permissionsItem.target = self
-        menu.addItem(permissionsItem)
+        let copyItem = NSMenuItem(title: "Copy Last Transcription", action: #selector(copyLastTranscription), keyEquivalent: "c")
+        copyItem.target = self
+        menu.addItem(copyItem)
 
         let resetItem = NSMenuItem(title: "Reset Session", action: #selector(resetSession), keyEquivalent: "r")
         resetItem.target = self
@@ -65,8 +68,8 @@ public final class MenuBarController: NSObject {
         onOpenStatistics?()
     }
 
-    @objc private func requestPermissions() {
-        onRequestPermissions?()
+    @objc private func copyLastTranscription() {
+        onCopyLastTranscription?()
     }
 
     @objc private func resetSession() {
