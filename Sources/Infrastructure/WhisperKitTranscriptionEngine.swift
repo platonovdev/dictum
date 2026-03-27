@@ -182,11 +182,16 @@ public final class WhisperKitTranscriptionEngine: SpeechTranscriptionEngine {
             return true
         }
 
+        let transcriptionStart = CFAbsoluteTimeGetCurrent()
+
         let results = try await whisperKit.transcribe(
             audioPath: capturedAudio.fileURL.path,
             decodeOptions: decodeOptions,
             callback: callback
         )
+
+        let transcriptionDuration = CFAbsoluteTimeGetCurrent() - transcriptionStart
+
         let text = results
             .map(\.text)
             .joined(separator: " ")
@@ -197,7 +202,9 @@ public final class WhisperKitTranscriptionEngine: SpeechTranscriptionEngine {
         return FinalTranscript(
             text: text,
             duration: capturedAudio.duration,
-            language: Self.preferredDictationLanguage
+            language: Self.preferredDictationLanguage,
+            backend: .local,
+            transcriptionDuration: transcriptionDuration
         )
         #else
         throw AppError.modelUnavailable

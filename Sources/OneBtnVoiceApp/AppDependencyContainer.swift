@@ -9,7 +9,9 @@ final class AppDependencyContainer {
     let historyStore = UserDefaultsDictationHistoryStore()
     let permissionService = SystemPermissionService()
     let audioCaptureService = AVAudioCaptureService()
-    let transcriptionEngine = WhisperKitTranscriptionEngine()
+    let localTranscriptionEngine = WhisperKitTranscriptionEngine()
+    let cloudTranscriptionEngine = CloudTranscriptionEngine()
+    let transcriptionEngine: HybridTranscriptionEngine
     let hotkeyService = QuartzHotkeyService()
     let launchAtLoginService = SystemLaunchAtLoginService()
     let audioArchive = FileSystemDictationAudioArchive()
@@ -27,6 +29,11 @@ final class AppDependencyContainer {
     let mainAppViewModel: MainAppViewModel
 
     init() {
+        transcriptionEngine = HybridTranscriptionEngine(
+            localEngine: localTranscriptionEngine,
+            cloudEngine: cloudTranscriptionEngine
+        )
+
         let accessibilityInsertion = AccessibilityTextInsertionService()
         let clipboardFallback = ClipboardPasteFallbackService()
         let textInsertionService = CompositeTextInsertionService(

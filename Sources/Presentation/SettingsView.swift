@@ -41,6 +41,8 @@ public struct SettingsView: View {
                 Toggle("Launch at login", isOn: $settingsViewModel.settings.launchAtLogin)
             }
 
+            cloudSection
+
             permissionsSection
 
             Text("Dictation is optimized for Russian speech in this build. Switching to a new model downloads it once, then macOS reuses the local cache across app rebuilds.")
@@ -66,6 +68,38 @@ public struct SettingsView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var cloudSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Cloud Transcription")
+                .font(.headline)
+
+            Form {
+                SecureField("API Key", text: $settingsViewModel.settings.cloudAPIKey)
+
+                TextField("Base URL", text: $settingsViewModel.settings.cloudBaseURL)
+
+                HStack {
+                    Text("Use cloud when recording is longer than")
+                    TextField("", value: $settingsViewModel.settings.cloudDurationThreshold, format: .number)
+                        .frame(width: 50)
+                    Text("sec")
+                }
+            }
+
+            if settingsViewModel.settings.isCloudEnabled {
+                Text("Cloud transcription is enabled. Recordings longer than \(Int(settingsViewModel.settings.cloudDurationThreshold))s will be sent to the cloud API.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Enter an API key to enable cloud transcription for long recordings. Short recordings always use the local model.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var permissionsSection: some View {
