@@ -183,7 +183,25 @@ public struct HistoryView: View {
         let duration = formattedDuration(entry.duration)
         let wordLabel = entry.wordCount == 1 ? "word" : "words"
         let status = statusLabel(for: entry.status)
-        return "\(duration) • \(entry.wordCount) \(wordLabel) • \(status)"
+        var parts = ["\(duration)", "\(entry.wordCount) \(wordLabel)", status]
+        if let backend = entry.transcriptionBackend {
+            parts.append(backendLabel(for: backend))
+        }
+        if let transcriptionDuration = entry.transcriptionDuration, transcriptionDuration > 0 {
+            parts.append(String(format: "%.1fs", transcriptionDuration))
+        }
+        return parts.joined(separator: " • ")
+    }
+
+    private func backendLabel(for backend: TranscriptionBackend) -> String {
+        switch backend {
+        case .cloud:
+            return "Cloud"
+        case .local:
+            return "Local"
+        case .cloudWithLocalFallback:
+            return "Cloud → Local"
+        }
     }
 
     private func errorText(for entry: DictationHistoryEntry) -> String {

@@ -1,3 +1,4 @@
+import AVFoundation
 import Application
 import Domain
 import Foundation
@@ -49,15 +50,25 @@ public final class CloudTranscriptionEngine: SpeechTranscriptionEngine {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 120
 
-        let audioData: Data
-        do {
-            audioData = try Data(contentsOf: capturedAudio.fileURL)
-        } catch {
-            throw AppError.transcriptionFailed("Could not read audio file: \(error.localizedDescription)")
-        }
+        partialHandler(TranscriptChunk(text: "Compressing audio…", isFinal: false))
 
-        let fileName = capturedAudio.fileURL.lastPathComponent
-        let mimeType = mimeTypeForFile(fileName)
+        let (audioData, fileName, mimeType): (Data, String, String)
+        do {
+            let compressed = try await compressToM4A(capturedAudio.fileURL)
+            audioData = try Data(contentsOf: compressed)
+            fileName = compressed.lastPathComponent
+            mimeType = "audio/mp4"
+            try? FileManager.default.removeItem(at: compressed)
+        } catch {
+            // Fallback to original file if compression fails
+            do {
+                audioData = try Data(contentsOf: capturedAudio.fileURL)
+                fileName = capturedAudio.fileURL.lastPathComponent
+                mimeType = mimeTypeForFile(capturedAudio.fileURL.lastPathComponent)
+            } catch {
+                throw AppError.transcriptionFailed("Could not read audio file: \(error.localizedDescription)")
+            }
+        }
 
         var body = Data()
         appendFormField(&body, boundary: boundary, name: "model", value: "whisper-1")
@@ -149,5 +160,41 @@ public final class CloudTranscriptionEngine: SpeechTranscriptionEngine {
         case "flac": return "audio/flac"
         default: return "audio/wav"
         }
+    }
+
+    private func compressToM4A(_ sourceURL: URL) async throws -> URL {
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cloud-\(UUID().uuidString)")
+            .appendingPathExtension("m4a")
+
+        let sourceFile = try AVAudioFile(forReading: sourceURL)
+        let format = sourceFile.processingFormat
+
+        let outputSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: min(Float(format.sampleRate), 16000),
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 32_000
+        ]
+
+        let outputFile = try AVAudioFile(
+            forWriting: outputURL,
+            settings: outputSettings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+
+        let bufferSize: AVAudioFrameCount = 8192
+        let sourceBuffer = AVAudioPCMBuffer(
+            pcmFormat: sourceFile.processingFormat,
+            frameCapacity: bufferSize
+        )!
+
+        while sourceFile.framePosition < sourceFile.length {
+            try sourceFile.read(into: sourceBuffer)
+            try outputFile.write(from: sourceBuffer)
+        }
+
+        return outputURL
     }
 }
