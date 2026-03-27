@@ -37,7 +37,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(
             onBus: 0,
-            bufferSize: 1024,
+            bufferSize: 2048,
             format: format,
             block: tapSink.makeTapHandler()
         )
@@ -87,7 +87,9 @@ private final class TapSink: @unchecked Sendable {
     private var outputFile: AVAudioFile?
 
     func makeMeterStream() -> AsyncStream<AudioMeterFrame> {
-        meterBroadcast.stream()
+        // Meter consumers only need the freshest sample. Dropping stale frames
+        // keeps long sessions from building an async backlog.
+        meterBroadcast.stream(bufferingPolicy: .bufferingNewest(1))
     }
 
     func configure(outputFile: AVAudioFile) {
@@ -135,6 +137,7 @@ private final class AudioMeterAnalyzer: @unchecked Sendable {
     private var slowLowPass: Float = 0
     private var fastLowPass: Float = 0
     private var smoothedBands = Array(repeating: Float(0), count: 9)
+    private var speechDetector = RealtimeSpeechActivityDetector()
 
     func analyze(buffer: AVAudioPCMBuffer) -> AudioMeterFrame {
         guard let channelData = buffer.floatChannelData else {
@@ -174,6 +177,23 @@ private final class AudioMeterAnalyzer: @unchecked Sendable {
         }
 
         let overallLevel = normalizedLevel(energy: overallEnergy, frameLength: frameLength, gain: 28)
+        let overallRMS = sqrt(overallEnergy / Float(frameLength))
+        let overallPeak = segmentPeaks.max() ?? 0
+        let frameDuration = TimeInterval(buffer.frameLength) / buffer.format.sampleRate
+        let rmsDB = decibels(for: overallRMS)
+        let peakDB = decibels(for: overallPeak)
+        let lowDB = decibels(for: sqrt(lowEnergy / Float(frameLength)))
+        let midDB = decibels(for: sqrt(midEnergy / Float(frameLength)))
+        let highDB = decibels(for: sqrt(highEnergy / Float(frameLength)))
+        let speechDecision = speechDetector.process(
+            rmsDB: rmsDB,
+            peakDB: peakDB,
+            lowDB: lowDB,
+            midDB: midDB,
+            highDB: highDB,
+            frameDuration: Float(frameDuration)
+        )
+        let visualLevel = normalizedVisualLevel(rms: overallRMS, peak: overallPeak)
         let lowLevel = normalizedLevel(energy: lowEnergy, frameLength: frameLength, gain: 46)
         let midLevel = normalizedLevel(energy: midEnergy, frameLength: frameLength, gain: 60)
         let highLevel = normalizedLevel(energy: highEnergy, frameLength: frameLength, gain: 88)
@@ -199,17 +219,41 @@ private final class AudioMeterAnalyzer: @unchecked Sendable {
             bands.append(smoothedBands[index])
         }
 
-        return AudioMeterFrame(overallLevel: overallLevel, bands: bands)
+        return AudioMeterFrame(
+            overallLevel: overallLevel,
+            visualLevel: visualLevel,
+            speechConfidence: speechDecision.confidence,
+            isSpeechDetected: speechDecision.isSpeechDetected,
+            frameDuration: frameDuration,
+            bands: bands
+        )
     }
 
     func reset() {
         slowLowPass = 0
         fastLowPass = 0
         smoothedBands = Array(repeating: 0, count: bandWeights.count)
+        speechDetector.reset()
     }
 
     private func normalizedLevel(energy: Float, frameLength: Int, gain: Float) -> Float {
         let rms = sqrt(energy / Float(frameLength))
         return min(max(rms * gain, 0), 1)
+    }
+
+    private func normalizedVisualLevel(rms: Float, peak: Float) -> Float {
+        let rmsDB = 20 * log10(max(rms, 0.000_001))
+        let peakDB = 20 * log10(max(peak, 0.000_001))
+        let rmsComponent = normalizedDecibel(db: rmsDB, floor: -58, ceiling: -14)
+        let peakComponent = normalizedDecibel(db: peakDB, floor: -52, ceiling: -8)
+        return min(max((rmsComponent * 0.8) + (peakComponent * 0.2), 0), 1)
+    }
+
+    private func normalizedDecibel(db: Float, floor: Float, ceiling: Float) -> Float {
+        min(max((db - floor) / (ceiling - floor), 0), 1)
+    }
+
+    private func decibels(for linear: Float) -> Float {
+        20 * log10(max(linear, 0.000_001))
     }
 }

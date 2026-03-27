@@ -6,10 +6,12 @@ public final class AsyncBroadcast<Value: Sendable>: @unchecked Sendable {
 
     public init() {}
 
-    public func stream() -> AsyncStream<Value> {
+    public func stream(
+        bufferingPolicy: AsyncStream<Value>.Continuation.BufferingPolicy = .unbounded
+    ) -> AsyncStream<Value> {
         let id = UUID()
 
-        return AsyncStream { continuation in
+        return AsyncStream(bufferingPolicy: bufferingPolicy) { continuation in
             self.lock.lock()
             self.continuations[id] = continuation
             self.lock.unlock()

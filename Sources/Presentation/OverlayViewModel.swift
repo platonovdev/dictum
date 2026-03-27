@@ -16,8 +16,6 @@ public final class OverlayViewModel: ObservableObject {
         static let barCount = 24
         /// How often we push a new bar (controls scroll speed).
         static let pushInterval: Duration = .milliseconds(60)
-        static let idleLevel = Float(0.022)
-        static let calibrationFrames = 10
     }
 
     @Published public private(set) var isVisible = false
@@ -35,9 +33,8 @@ public final class OverlayViewModel: ObservableObject {
     private var elapsedTask: Task<Void, Never>?
     private var waveformTask: Task<Void, Never>?
 
-    private var latestVolume: Float = 0
-    private var noiseFloor: Float = 0.01
-    private var calibrationFramesRemaining = 0
+    private var latestVisualLevel: Float = 0
+    private var waveformLeveler = AdaptiveWaveformLeveler()
 
     public init(coordinator: DictationSessionCoordinating) {
         tasks.append(Task { [weak self] in
@@ -54,7 +51,12 @@ public final class OverlayViewModel: ObservableObject {
                 guard let self else {
                     return
                 }
-                self.latestVolume = meterFrame.overallLevel
+                if meterFrame.isSpeechDetected {
+                    self.latestVisualLevel = meterFrame.visualLevel
+                } else {
+                    let residualNoise = meterFrame.visualLevel * (0.08 + (meterFrame.speechConfidence * 0.20))
+                    self.latestVisualLevel = residualNoise
+                }
             }
         })
     }
@@ -144,27 +146,7 @@ public final class OverlayViewModel: ObservableObject {
     /// right end of the buffer, and drop the oldest bar on the left — creating
     /// a scrolling timeline effect.
     private func pushWaveformBar() {
-        let volume = latestVolume
-
-        // Adaptive noise floor
-        if calibrationFramesRemaining > 0 {
-            noiseFloor = max(noiseFloor, volume)
-            calibrationFramesRemaining -= 1
-        } else if volume < noiseFloor + 0.02 {
-            noiseFloor += (volume - noiseFloor) * 0.08
-        } else {
-            noiseFloor += (volume - noiseFloor) * 0.01
-        }
-        noiseFloor = min(max(noiseFloor, 0.002), 0.08)
-
-        let normalized = min(max((volume - noiseFloor) / (1.0 - noiseFloor), 0), 1)
-
-        let barHeight: Float
-        if normalized > 0.02 {
-            barHeight = pow(normalized, 1.6)
-        } else {
-            barHeight = WaveformConstants.idleLevel
-        }
+        let barHeight = waveformLeveler.push(inputLevel: latestVisualLevel)
 
         // Shift buffer left, append new bar on the right
         waveformLevels.append(barHeight)
@@ -174,10 +156,9 @@ public final class OverlayViewModel: ObservableObject {
     }
 
     private func resetWaveform() {
-        latestVolume = 0
-        noiseFloor = 0.01
-        calibrationFramesRemaining = WaveformConstants.calibrationFrames
-        let idle = WaveformConstants.idleLevel
+        latestVisualLevel = 0
+        waveformLeveler.reset()
+        let idle = AdaptiveWaveformLeveler.idleLevel
         waveformLevels = Array(repeating: idle, count: WaveformConstants.barCount)
     }
 

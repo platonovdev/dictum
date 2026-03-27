@@ -439,15 +439,34 @@ public struct ModelPreparationStatus: Equatable, Sendable {
 
 public struct AudioMeterFrame: Equatable, Sendable {
     public var overallLevel: Float
+    public var visualLevel: Float
+    public var speechConfidence: Float
+    public var isSpeechDetected: Bool
+    public var frameDuration: TimeInterval
     public var bands: [Float]
 
-    public init(overallLevel: Float, bands: [Float]) {
+    public init(
+        overallLevel: Float,
+        visualLevel: Float? = nil,
+        speechConfidence: Float = 0,
+        isSpeechDetected: Bool = false,
+        frameDuration: TimeInterval = 0,
+        bands: [Float]
+    ) {
         self.overallLevel = overallLevel
+        self.visualLevel = visualLevel ?? overallLevel
+        self.speechConfidence = speechConfidence
+        self.isSpeechDetected = isSpeechDetected
+        self.frameDuration = frameDuration
         self.bands = bands
     }
 
     public static let silent = AudioMeterFrame(
         overallLevel: 0,
+        visualLevel: 0,
+        speechConfidence: 0,
+        isSpeechDetected: false,
+        frameDuration: 0,
         bands: Array(repeating: 0, count: 9)
     )
 }
