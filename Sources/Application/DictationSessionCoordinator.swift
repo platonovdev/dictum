@@ -4,7 +4,6 @@ import Foundation
 @MainActor
 public final class DictationSessionCoordinator: DictationSessionCoordinating {
     private enum Constants {
-        static let minimumSpeechLevel: Float = 0.045
         static let minimumSpeechDuration: TimeInterval = 0.35
         static let transientResetDelay: Duration = .milliseconds(900)
         static let quickTapMaxDuration: TimeInterval = 0.25
@@ -34,7 +33,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     private var levelTask: Task<Void, Never>?
     private var isModelPrepared = false
     private var activeSessionID = UUID()
-    private var peakInputLevel: Float = 0
+    private var detectedSpeechDuration: TimeInterval = 0
     private var recordingStartedAt: Date?
     private var latestPartialText: String = ""
     private var hotkeyGestureState: HotkeyGestureState = .idle
@@ -70,7 +69,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     }
 
     public func makeMeterStream() -> AsyncStream<AudioMeterFrame> {
-        meterBroadcast.stream()
+        meterBroadcast.stream(bufferingPolicy: .bufferingNewest(1))
     }
 
     public func makeHistoryStream() -> AsyncStream<[DictationHistoryEntry]> {
@@ -161,7 +160,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
             let sessionID = UUID()
             activeSessionID = sessionID
-            peakInputLevel = 0
+            detectedSpeechDuration = 0
             latestPartialText = ""
 
             try await audioCaptureService.startRecording()
@@ -201,7 +200,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                 return
             }
 
-            if peakInputLevel < Constants.minimumSpeechLevel || capturedAudio.duration < Constants.minimumSpeechDuration {
+            if detectedSpeechDuration < Constants.minimumSpeechDuration || capturedAudio.duration < Constants.minimumSpeechDuration {
                 try await persistHistoryEntry(
                     DictationHistoryEntry.make(
                         id: sessionID,
@@ -407,7 +406,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
     public func resetSession() async {
         activeSessionID = UUID()
-        peakInputLevel = 0
+        detectedSpeechDuration = 0
         levelTask?.cancel()
         levelTask = nil
         cancelHotkeyDecisionTask()
@@ -470,7 +469,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                     guard let self, self.isCurrent(sessionID) else {
                         return
                     }
-                    self.peakInputLevel = max(self.peakInputLevel, meterFrame.overallLevel)
+                    if meterFrame.isSpeechDetected {
+                        self.detectedSpeechDuration += meterFrame.frameDuration
+                    }
                     self.meterBroadcast.yield(meterFrame)
                 }
             }
@@ -652,7 +653,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
         let sessionID = entry.id
         activeSessionID = sessionID
-        peakInputLevel = 0
+        detectedSpeechDuration = 0
         latestPartialText = ""
         recordingStartedAt = entry.startedAt
         transition(to: .transcribing(partialText: nil))

@@ -1,7 +1,7 @@
 #if canImport(Testing)
+@testable import Presentation
 import Application
 import Domain
-import Presentation
 import Foundation
 import Testing
 
@@ -61,6 +61,40 @@ func overlayViewModelHidesOnIdle() async {
     #expect(!viewModel.isVisible)
     #expect(viewModel.statusText == nil)
     #expect(viewModel.timerText == "0:00")
+}
+
+@Test
+func adaptiveWaveformLevelerSuppressesSteadyNoiseAndRespondsToSpeech() {
+    var leveler = AdaptiveWaveformLeveler()
+
+    var noiseOutput: Float = 0
+    for _ in 0..<24 {
+        noiseOutput = leveler.push(inputLevel: 0.34)
+    }
+
+    var speechOutput: Float = 0
+    for _ in 0..<5 {
+        speechOutput = leveler.push(inputLevel: 0.56)
+    }
+
+    #expect(noiseOutput < 0.08)
+    #expect(speechOutput > noiseOutput + 0.18)
+}
+
+@Test
+func adaptiveWaveformLevelerKeepsQuietSpeechVisible() {
+    var leveler = AdaptiveWaveformLeveler()
+
+    for _ in 0..<18 {
+        _ = leveler.push(inputLevel: 0.07)
+    }
+
+    var quietSpeechOutput: Float = 0
+    for _ in 0..<6 {
+        quietSpeechOutput = leveler.push(inputLevel: 0.13)
+    }
+
+    #expect(quietSpeechOutput > 0.16)
 }
 
 private final class MockCoordinator: DictationSessionCoordinating {

@@ -2,6 +2,7 @@
 import Application
 import Domain
 import Foundation
+@testable import Infrastructure
 import Testing
 
 @Test
@@ -62,6 +63,61 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     #expect(entries.count == 1)
     #expect(entries.first?.transcript == "hello world")
     #expect(entries.first?.status == .inserted)
+}
+
+@Test
+@MainActor
+func stopDictationTreatsNoiseOnlyAsEmptyTranscript() async {
+    let insertionService = MockInsertionService()
+    let historyStore = MockHistoryStore()
+    let coordinator = DictationSessionCoordinator(
+        transcriptionEngine: MockSpeechEngine(finalText: "hallucinated"),
+        audioCaptureService: MockAudioCaptureService(meterFrames: [
+            AudioMeterFrame(
+                overallLevel: 0.55,
+                visualLevel: 0.42,
+                speechConfidence: 0.08,
+                isSpeechDetected: false,
+                frameDuration: 0.12,
+                bands: Array(repeating: 0.35, count: 9)
+            ),
+            AudioMeterFrame(
+                overallLevel: 0.58,
+                visualLevel: 0.40,
+                speechConfidence: 0.10,
+                isSpeechDetected: false,
+                frameDuration: 0.12,
+                bands: Array(repeating: 0.33, count: 9)
+            ),
+            AudioMeterFrame(
+                overallLevel: 0.52,
+                visualLevel: 0.38,
+                speechConfidence: 0.05,
+                isSpeechDetected: false,
+                frameDuration: 0.12,
+                bands: Array(repeating: 0.31, count: 9)
+            )
+        ]),
+        insertionService: insertionService,
+        permissionService: MockPermissionService(
+            snapshot: PermissionSnapshot(
+                microphone: .authorized,
+                accessibility: .authorized,
+                inputMonitoring: .authorized
+            )
+        ),
+        settingsStore: MockSettingsStore(),
+        historyStore: historyStore
+    )
+
+    await coordinator.prepare()
+    await coordinator.startDictation()
+    await coordinator.stopDictation()
+
+    let entries = await historyStore.entries
+    #expect(await insertionService.insertedText == nil)
+    #expect(entries.count == 1)
+    #expect(entries.first?.status == .emptyTranscript)
 }
 
 @Test
@@ -214,9 +270,27 @@ private actor MockSpeechEngine: SpeechTranscriptionEngine {
 }
 
 private final class MockAudioCaptureService: AudioCaptureService {
+    private let meterFrames: [AudioMeterFrame]
+
+    init(
+        meterFrames: [AudioMeterFrame] = Array(
+            repeating: AudioMeterFrame(
+                overallLevel: 0.2,
+                visualLevel: 0.24,
+                speechConfidence: 0.92,
+                isSpeechDetected: true,
+                frameDuration: 0.1,
+                bands: Array(repeating: 0.2, count: 9)
+            ),
+            count: 5
+        )
+    ) {
+        self.meterFrames = meterFrames
+    }
+
     func makeMeterStream() -> AsyncStream<AudioMeterFrame> {
         AsyncStream { continuation in
-            continuation.yield(AudioMeterFrame(overallLevel: 0.2, bands: Array(repeating: 0.2, count: 9)))
+            meterFrames.forEach { continuation.yield($0) }
             continuation.finish()
         }
     }
