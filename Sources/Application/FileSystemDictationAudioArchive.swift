@@ -46,6 +46,28 @@ public final class FileSystemDictationAudioArchive: DictationAudioArchive, @unch
         return CapturedAudio(fileURL: url, duration: duration)
     }
 
+    public func createRetainedAudioCopy(from archivedAudio: ArchivedAudio, for entryID: UUID) async throws -> ArchivedAudio {
+        do {
+            try ensureArchiveDirectoryExists()
+
+            let destinationURL = archiveDirectoryURL
+                .appendingPathComponent("\(entryID.uuidString)-retained")
+                .appendingPathExtension("m4a")
+
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: destinationURL)
+            }
+
+            try AudioCompression.compressToM4A(sourceURL: archivedAudio.fileURL, outputURL: destinationURL)
+
+            return ArchivedAudio(fileURL: destinationURL, duration: archivedAudio.duration)
+        } catch let error as AppError {
+            throw error
+        } catch {
+            throw AppError.audioArchiveFailed(error.localizedDescription)
+        }
+    }
+
     public func deleteArchivedAudio(at path: String) async {
         let url = URL(fileURLWithPath: path)
         try? fileManager.removeItem(at: url)

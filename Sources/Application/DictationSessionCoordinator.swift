@@ -300,6 +300,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
             let cleaned = finalTranscript.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleaned.isEmpty else {
+                let retainedAudio = await retainedAudioForHistory(from: archivedAudio, entryID: sessionID)
                 try await persistHistoryEntry(
                     DictationHistoryEntry.make(
                         id: sessionID,
@@ -308,15 +309,20 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                         duration: finalTranscript.duration,
                         language: finalTranscript.language,
                         status: .emptyTranscript,
-                        statusDetail: AppError.emptyTranscript.userFacingDescription
+                        statusDetail: AppError.emptyTranscript.userFacingDescription,
+                        audioArtifactPath: retainedAudio.fileURL.path,
+                        transcriptionBackend: finalTranscript.backend,
+                        transcriptionDuration: finalTranscript.transcriptionDuration
                     )
                 )
-                await audioArchive.deleteArchivedAudio(at: archivedAudio.fileURL.path)
+                await deleteOriginalArchiveIfNeeded(original: archivedAudio, retained: retainedAudio)
                 transition(to: .idle())
                 recordingStartedAt = nil
                 latestPartialText = ""
                 return
             }
+
+            let retainedAudio = await retainedAudioForHistory(from: archivedAudio, entryID: sessionID)
 
             if settings.autoPaste {
                 transition(to: .inserting(text: cleaned))
@@ -337,11 +343,12 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                             language: finalTranscript.language,
                             status: historyStatus(for: result),
                             statusDetail: historyStatusDetail(for: result),
+                            audioArtifactPath: retainedAudio.fileURL.path,
                             transcriptionBackend: finalTranscript.backend,
                             transcriptionDuration: finalTranscript.transcriptionDuration
                         )
                     )
-                    await audioArchive.deleteArchivedAudio(at: archivedAudio.fileURL.path)
+                    await deleteOriginalArchiveIfNeeded(original: archivedAudio, retained: retainedAudio)
                     transition(to: .idle(lastTranscript: cleaned, insertionResult: result))
                 case .failure(let error):
                     try await persistFailedHistoryEntry(
@@ -350,10 +357,11 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                         duration: finalTranscript.duration,
                         transcript: cleaned,
                         error: error,
-                        audioArtifactPath: archivedAudio.fileURL.path,
+                        audioArtifactPath: retainedAudio.fileURL.path,
                         retryCount: 0,
                         failureStage: .transcription
                     )
+                    await deleteOriginalArchiveIfNeeded(original: archivedAudio, retained: retainedAudio)
                     await handleError(error)
                     return
                 }
@@ -366,11 +374,12 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                         duration: finalTranscript.duration,
                         language: finalTranscript.language,
                         status: .savedWithoutInsertion,
+                        audioArtifactPath: retainedAudio.fileURL.path,
                         transcriptionBackend: finalTranscript.backend,
                         transcriptionDuration: finalTranscript.transcriptionDuration
                     )
                 )
-                await audioArchive.deleteArchivedAudio(at: archivedAudio.fileURL.path)
+                await deleteOriginalArchiveIfNeeded(original: archivedAudio, retained: retainedAudio)
                 transition(to: .idle(lastTranscript: cleaned, insertionResult: nil))
             }
 
@@ -641,6 +650,22 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         try await historyStore.delete(id: id)
     }
 
+    private func retainedAudioForHistory(from archivedAudio: ArchivedAudio, entryID: UUID) async -> ArchivedAudio {
+        do {
+            return try await audioArchive.createRetainedAudioCopy(from: archivedAudio, for: entryID)
+        } catch {
+            return archivedAudio
+        }
+    }
+
+    private func deleteOriginalArchiveIfNeeded(original: ArchivedAudio, retained: ArchivedAudio) async {
+        guard original.fileURL.path != retained.fileURL.path else {
+            return
+        }
+
+        await audioArchive.deleteArchivedAudio(at: original.fileURL.path)
+    }
+
     private func retryHistoryEntry(_ entry: DictationHistoryEntry) async throws {
         guard entry.isRetryable, let audioArtifactPath = entry.audioArtifactPath else {
             throw AppError.archivedAudioUnavailable(entry.audioArtifactPath ?? "")
@@ -687,12 +712,13 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                     language: finalTranscript.language,
                     status: .emptyTranscript,
                     statusDetail: AppError.emptyTranscript.userFacingDescription,
-                    audioArtifactPath: nil,
+                    audioArtifactPath: audioArtifactPath,
                     retryCount: entry.retryCount + 1,
-                    failureStage: nil
+                    failureStage: nil,
+                    transcriptionBackend: finalTranscript.backend,
+                    transcriptionDuration: finalTranscript.transcriptionDuration
                 )
                 try await updateHistoryEntry(emptyEntry)
-                await audioArchive.deleteArchivedAudio(at: audioArtifactPath)
                 transition(to: .idle())
                 recordingStartedAt = nil
                 latestPartialText = ""
@@ -707,12 +733,13 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                 duration: finalTranscript.duration,
                 language: finalTranscript.language,
                 status: .savedWithoutInsertion,
-                audioArtifactPath: nil,
+                audioArtifactPath: audioArtifactPath,
                 retryCount: entry.retryCount + 1,
-                failureStage: nil
+                failureStage: nil,
+                transcriptionBackend: finalTranscript.backend,
+                transcriptionDuration: finalTranscript.transcriptionDuration
             )
             try await updateHistoryEntry(successEntry)
-            await audioArchive.deleteArchivedAudio(at: audioArtifactPath)
             transition(to: .idle(lastTranscript: cleaned, insertionResult: nil))
 
             recordingStartedAt = nil

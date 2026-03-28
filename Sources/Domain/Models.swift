@@ -385,7 +385,7 @@ public extension DictationHistoryEntry {
     }
 
     var isRetryable: Bool {
-        status == .failed && audioArtifactPath != nil
+        audioArtifactPath != nil
     }
 
     var countsTowardStatistics: Bool {

@@ -66,6 +66,7 @@ public protocol DictationHistoryStore {
 
 public protocol DictationAudioArchive: Sendable {
     func archive(_ capturedAudio: CapturedAudio, for entryID: UUID) async throws -> ArchivedAudio
+    func createRetainedAudioCopy(from archivedAudio: ArchivedAudio, for entryID: UUID) async throws -> ArchivedAudio
     func loadArchivedAudio(at path: String, duration: TimeInterval) async throws -> CapturedAudio
     func deleteArchivedAudio(at path: String) async
 }
