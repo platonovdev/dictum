@@ -1,4 +1,5 @@
 #if canImport(Testing)
+import AVFoundation
 import Application
 import Domain
 import Foundation
@@ -89,6 +90,28 @@ func fileSystemArchiveCopiesLoadsAndDeletesAudio() async throws {
 
 @Test
 @MainActor
+func retainedCompressionKeepsApproximateDuration() async throws {
+    let archive = FileSystemDictationAudioArchive()
+    let sourceURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathExtension("wav")
+    try writeSilentAudioFile(to: sourceURL, duration: 1.25, sampleRate: 48_000)
+    defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+    let retained = try await archive.createRetainedAudioCopy(
+        from: ArchivedAudio(fileURL: sourceURL, duration: 1.25),
+        for: UUID()
+    )
+    defer { try? FileManager.default.removeItem(at: retained.fileURL) }
+
+    let retainedFile = try AVAudioFile(forReading: retained.fileURL)
+    let retainedDuration = Double(retainedFile.length) / retainedFile.processingFormat.sampleRate
+
+    #expect(abs(retainedDuration - 1.25) < 0.15)
+}
+
+@Test
+@MainActor
 func coordinatorRetryUpdatesTheSameHistoryEntry() async throws {
     let entryID = UUID()
     let audioURL = FileManager.default.temporaryDirectory
@@ -137,10 +160,10 @@ func coordinatorRetryUpdatesTheSameHistoryEntry() async throws {
     #expect(entries.first?.id == entryID)
     #expect(entries.first?.transcript == "retried transcript")
     #expect(entries.first?.status == .savedWithoutInsertion)
-    #expect(entries.first?.audioArtifactPath == nil)
+    #expect(entries.first?.audioArtifactPath == audioURL.path)
     #expect(entries.first?.retryCount == 1)
     #expect(await insertionService.insertedText == nil)
-    #expect(await archive.deletedPaths == [audioURL.path])
+    #expect(await archive.deletedPaths.isEmpty)
 }
 
 private actor MockHistoryStore: DictationHistoryStore {
@@ -193,8 +216,26 @@ private actor MockRetryArchive: DictationAudioArchive {
         CapturedAudio(fileURL: audioURL, duration: duration)
     }
 
+    func createRetainedAudioCopy(from archivedAudio: ArchivedAudio, for entryID: UUID) async throws -> ArchivedAudio {
+        archivedAudio
+    }
+
     func deleteArchivedAudio(at path: String) async {
         deletedPaths.append(path)
     }
+}
+
+private func writeSilentAudioFile(to url: URL, duration: TimeInterval, sampleRate: Double) throws {
+    let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+    let frameCount = AVAudioFrameCount(duration * sampleRate)
+    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+    buffer.frameLength = frameCount
+
+    if let channelData = buffer.floatChannelData {
+        channelData[0].initialize(repeating: 0, count: Int(frameCount))
+    }
+
+    let file = try AVAudioFile(forWriting: url, settings: format.settings)
+    try file.write(from: buffer)
 }
 #endif

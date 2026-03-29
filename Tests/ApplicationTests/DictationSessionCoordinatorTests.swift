@@ -38,6 +38,7 @@ func startDictationTransitionsToPermissionErrorWhenPermissionsMissing() async {
 func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     let insertionService = MockInsertionService()
     let historyStore = MockHistoryStore()
+    let archive = MockArchive()
     let coordinator = DictationSessionCoordinator(
         transcriptionEngine: MockSpeechEngine(finalText: "hello world"),
         audioCaptureService: MockAudioCaptureService(),
@@ -50,7 +51,8 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
             )
         ),
         settingsStore: MockSettingsStore(),
-        historyStore: historyStore
+        historyStore: historyStore,
+        audioArchive: archive
     )
 
     await coordinator.prepare()
@@ -63,6 +65,8 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     #expect(entries.count == 1)
     #expect(entries.first?.transcript == "hello world")
     #expect(entries.first?.status == .inserted)
+    #expect(entries.first?.audioArtifactPath == "/tmp/retained.m4a")
+    #expect(await archive.deletedPaths == ["/tmp/original.wav"])
 }
 
 @Test
@@ -314,6 +318,26 @@ private actor MockInsertionService: TextInsertionService {
     func insert(text: String) async -> InsertionResult {
         insertedText = text
         return .success
+    }
+}
+
+private actor MockArchive: DictationAudioArchive {
+    private(set) var deletedPaths: [String] = []
+
+    func archive(_ capturedAudio: CapturedAudio, for entryID: UUID) async throws -> ArchivedAudio {
+        ArchivedAudio(fileURL: URL(fileURLWithPath: "/tmp/original.wav"), duration: capturedAudio.duration)
+    }
+
+    func createRetainedAudioCopy(from archivedAudio: ArchivedAudio, for entryID: UUID) async throws -> ArchivedAudio {
+        ArchivedAudio(fileURL: URL(fileURLWithPath: "/tmp/retained.m4a"), duration: archivedAudio.duration)
+    }
+
+    func loadArchivedAudio(at path: String, duration: TimeInterval) async throws -> CapturedAudio {
+        CapturedAudio(fileURL: URL(fileURLWithPath: path), duration: duration)
+    }
+
+    func deleteArchivedAudio(at path: String) async {
+        deletedPaths.append(path)
     }
 }
 
