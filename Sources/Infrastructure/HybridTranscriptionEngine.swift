@@ -4,12 +4,13 @@ import Foundation
 
 @MainActor
 public final class HybridTranscriptionEngine: SpeechTranscriptionEngine {
-    private let localEngine: WhisperKitTranscriptionEngine
+    private let localEngine: any ConfigurableLocalTranscriptionEngine
     private let cloudEngine: CloudTranscriptionEngine
     private var durationThreshold: TimeInterval
+    private var translateToEnglish = false
 
     public init(
-        localEngine: WhisperKitTranscriptionEngine,
+        localEngine: any ConfigurableLocalTranscriptionEngine,
         cloudEngine: CloudTranscriptionEngine,
         durationThreshold: TimeInterval = 20.0
     ) {
@@ -18,9 +19,22 @@ public final class HybridTranscriptionEngine: SpeechTranscriptionEngine {
         self.durationThreshold = durationThreshold
     }
 
-    public func updateSettings(apiKey: String, baseURL: String, durationThreshold: TimeInterval) {
-        cloudEngine.updateConfiguration(apiKey: apiKey, baseURL: baseURL)
+    public func updateSettings(
+        apiKey: String,
+        baseURL: String,
+        durationThreshold: TimeInterval,
+        language: DictationLanguage = .automatic,
+        customWords: [String] = [],
+        translateToEnglish: Bool = false
+    ) {
+        cloudEngine.updateConfiguration(apiKey: apiKey, baseURL: baseURL, language: language)
+        localEngine.updateSettings(
+            language: language,
+            customWords: customWords,
+            translateToEnglish: translateToEnglish
+        )
         self.durationThreshold = durationThreshold
+        self.translateToEnglish = translateToEnglish
     }
 
     public func prepareModel(
@@ -30,11 +44,15 @@ public final class HybridTranscriptionEngine: SpeechTranscriptionEngine {
         try await localEngine.prepareModel(named: modelIdentifier, progressHandler: progressHandler)
     }
 
+    public func unloadModel() async {
+        await localEngine.unloadModel()
+    }
+
     public func transcribe(
         _ capturedAudio: CapturedAudio,
         partialHandler: @escaping @Sendable (TranscriptChunk) -> Void
     ) async throws -> FinalTranscript {
-        let useCloud = cloudEngine.apiKey.isEmpty == false && capturedAudio.duration > durationThreshold
+        let useCloud = !translateToEnglish && cloudEngine.apiKey.isEmpty == false && capturedAudio.duration > durationThreshold
 
         if useCloud {
             do {

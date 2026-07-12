@@ -7,10 +7,21 @@ public protocol SpeechTranscriptionEngine {
         named modelIdentifier: String,
         progressHandler: @escaping @Sendable (ModelPreparationStatus) -> Void
     ) async throws
+    func unloadModel() async
     func transcribe(
         _ capturedAudio: CapturedAudio,
         partialHandler: @escaping @Sendable (TranscriptChunk) -> Void
     ) async throws -> FinalTranscript
+}
+
+/// A local engine whose decoding behaviour is controlled by Dictum settings.
+@MainActor
+public protocol ConfigurableLocalTranscriptionEngine: SpeechTranscriptionEngine {
+    func updateSettings(
+        language: DictationLanguage,
+        customWords: [String],
+        translateToEnglish: Bool
+    )
 }
 
 @MainActor
@@ -69,6 +80,11 @@ public protocol DictationAudioArchive: Sendable {
     func createRetainedAudioCopy(from archivedAudio: ArchivedAudio, for entryID: UUID) async throws -> ArchivedAudio
     func loadArchivedAudio(at path: String, duration: TimeInterval) async throws -> CapturedAudio
     func deleteArchivedAudio(at path: String) async
+    func cleanupUnreferencedAudio(keepingPaths: Set<String>, olderThan cutoff: Date) async
+}
+
+public extension DictationAudioArchive {
+    func cleanupUnreferencedAudio(keepingPaths: Set<String>, olderThan cutoff: Date) async {}
 }
 
 @MainActor

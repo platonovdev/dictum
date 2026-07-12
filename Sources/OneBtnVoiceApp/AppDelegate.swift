@@ -19,15 +19,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             let settings = (try? await container.loadSettingsUseCase.execute()) ?? .default
             registerHotkey(with: settings.hotkey)
+            overlayWindowController.setEnabled(settings.showOverlay)
             container.transcriptionEngine.updateSettings(
                 apiKey: settings.cloudAPIKey,
                 baseURL: settings.cloudBaseURL,
-                durationThreshold: settings.cloudDurationThreshold
+                durationThreshold: settings.cloudDurationThreshold,
+                language: settings.language,
+                customWords: settings.customWords,
+                translateToEnglish: settings.translateToEnglish
             )
-            await container.coordinator.prepare()
             if !container.permissionService.currentSnapshot().missingRequiredPermissions.isEmpty {
                 mainAppWindowController.show(section: .settings)
             }
+            await container.coordinator.prepare()
         }
 
         _ = overlayWindowController
@@ -85,10 +89,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func bindSettingsUpdates() {
         container.settingsViewModel.onSettingsSaved = { [weak self] settings in
             self?.registerHotkey(with: settings.hotkey)
+            self?.overlayWindowController.setEnabled(settings.showOverlay)
             self?.container.transcriptionEngine.updateSettings(
                 apiKey: settings.cloudAPIKey,
                 baseURL: settings.cloudBaseURL,
-                durationThreshold: settings.cloudDurationThreshold
+                durationThreshold: settings.cloudDurationThreshold,
+                language: settings.language,
+                customWords: settings.customWords,
+                translateToEnglish: settings.translateToEnglish
             )
             Task { @MainActor in
                 await self?.container.coordinator.reloadSettings()

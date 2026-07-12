@@ -9,7 +9,8 @@ final class AppDependencyContainer {
     let historyStore = UserDefaultsDictationHistoryStore()
     let permissionService = SystemPermissionService()
     let audioCaptureService = AVAudioCaptureService()
-    let localTranscriptionEngine = WhisperKitTranscriptionEngine()
+    // Handy's whisper.cpp + Metal execution path is the default local engine.
+    let localTranscriptionEngine = WhisperCppTranscriptionEngine()
     let cloudTranscriptionEngine = CloudTranscriptionEngine()
     let transcriptionEngine: HybridTranscriptionEngine
     let hotkeyService = QuartzHotkeyService()

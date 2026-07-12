@@ -6,21 +6,22 @@ import OSLog
 
 @MainActor
 public final class CloudTranscriptionEngine: SpeechTranscriptionEngine {
-    private static let preferredLanguage = "ru"
     private static let modelIdentifier = "gpt-4o-mini-transcribe"
     private let logger = Logger(subsystem: "com.dictum.app", category: "CloudTranscription")
 
     public private(set) var apiKey: String
     private var baseURL: String
+    private var language: DictationLanguage = .automatic
 
     public init(apiKey: String = "", baseURL: String = "https://api.openai.com") {
         self.apiKey = apiKey
         self.baseURL = baseURL
     }
 
-    public func updateConfiguration(apiKey: String, baseURL: String) {
+    public func updateConfiguration(apiKey: String, baseURL: String, language: DictationLanguage) {
         self.apiKey = apiKey
         self.baseURL = baseURL
+        self.language = language
     }
 
     public func prepareModel(
@@ -35,6 +36,8 @@ public final class CloudTranscriptionEngine: SpeechTranscriptionEngine {
             )
         )
     }
+
+    public func unloadModel() async {}
 
     public func transcribe(
         _ capturedAudio: CapturedAudio,
@@ -77,7 +80,9 @@ public final class CloudTranscriptionEngine: SpeechTranscriptionEngine {
 
         var body = Data()
         appendFormField(&body, boundary: boundary, name: "model", value: Self.modelIdentifier)
-        appendFormField(&body, boundary: boundary, name: "language", value: Self.preferredLanguage)
+        if let languageCode = language.whisperCode {
+            appendFormField(&body, boundary: boundary, name: "language", value: languageCode)
+        }
         appendFormField(&body, boundary: boundary, name: "response_format", value: "text")
         appendFormField(&body, boundary: boundary, name: "stream", value: "true")
         appendFileField(&body, boundary: boundary, name: "file", fileName: fileName, mimeType: mimeType, data: audioData)
@@ -127,7 +132,7 @@ public final class CloudTranscriptionEngine: SpeechTranscriptionEngine {
         return FinalTranscript(
             text: text,
             duration: capturedAudio.duration,
-            language: Self.preferredLanguage,
+            language: language.whisperCode,
             backend: .cloud,
             transcriptionDuration: transcriptionDuration
         )
