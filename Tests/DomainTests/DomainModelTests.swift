@@ -5,7 +5,7 @@ import Testing
 
 @Test
 func defaultSettingsFavorLocalAutopasteFlow() {
-    #expect(AppSettings.default.modelIdentifier == "openai_whisper-large-v3_turbo")
+    #expect(AppSettings.default.modelIdentifier == "ggml-large-v3-turbo")
     #expect(AppSettings.default.hotkey.kind == .rightCommandHold)
     #expect(AppSettings.default.autoPaste)
     #expect(!AppSettings.default.launchAtLogin)

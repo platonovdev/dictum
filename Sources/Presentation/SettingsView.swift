@@ -20,7 +20,6 @@ public struct SettingsView: View {
             modelSection
             recognitionSection
             privacySection
-            cloudSection
             permissionsSection
             footer
         }
@@ -32,7 +31,7 @@ public struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Dictation, on your terms")
                 .font(.system(size: 30, weight: .bold, design: .rounded))
-            Text("Everything is local by default. Choose how Dictum listens, writes, and keeps your recordings.")
+            Text("Everything stays on this Mac. Choose how Dictum listens, writes, and keeps your recordings.")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
         }
@@ -155,28 +154,6 @@ public struct SettingsView: View {
                     Text("\(settingsViewModel.settings.historyLimit) dictations")
                         .foregroundStyle(.secondary)
                 }
-            }
-            .font(.system(size: 13))
-        }
-    }
-
-    private var cloudSection: some View {
-        SettingsCard(title: "Cloud fallback", subtitle: "Optional — used only for long recordings") {
-            SecureField("API key", text: $settingsViewModel.settings.cloudAPIKey)
-                .textFieldStyle(.roundedBorder)
-            TextField("Base URL", text: $settingsViewModel.settings.cloudBaseURL)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Text("Use cloud after")
-                TextField("", value: $settingsViewModel.settings.cloudDurationThreshold, format: .number)
-                    .frame(width: 52)
-                    .textFieldStyle(.roundedBorder)
-                Text("seconds")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(settingsViewModel.settings.isCloudEnabled ? "Enabled" : "Local only")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(settingsViewModel.settings.isCloudEnabled ? .green : .secondary)
             }
             .font(.system(size: 13))
         }

@@ -21,9 +21,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             registerHotkey(with: settings.hotkey)
             overlayWindowController.setEnabled(settings.showOverlay)
             container.transcriptionEngine.updateSettings(
-                apiKey: settings.cloudAPIKey,
-                baseURL: settings.cloudBaseURL,
-                durationThreshold: settings.cloudDurationThreshold,
                 language: settings.language,
                 customWords: settings.customWords,
                 translateToEnglish: settings.translateToEnglish
@@ -91,9 +88,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.registerHotkey(with: settings.hotkey)
             self?.overlayWindowController.setEnabled(settings.showOverlay)
             self?.container.transcriptionEngine.updateSettings(
-                apiKey: settings.cloudAPIKey,
-                baseURL: settings.cloudBaseURL,
-                durationThreshold: settings.cloudDurationThreshold,
                 language: settings.language,
                 customWords: settings.customWords,
                 translateToEnglish: settings.translateToEnglish

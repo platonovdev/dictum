@@ -118,9 +118,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var autoPaste: Bool
     public var launchAtLogin: Bool
     public var overlayPosition: OverlayPosition
-    public var cloudAPIKey: String
-    public var cloudBaseURL: String
-    public var cloudDurationThreshold: Double
     public var language: DictationLanguage
     public var customWords: [String]
     public var translateToEnglish: Bool
@@ -136,9 +133,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         autoPaste: Bool,
         launchAtLogin: Bool,
         overlayPosition: OverlayPosition,
-        cloudAPIKey: String = "",
-        cloudBaseURL: String = "https://api.openai.com",
-        cloudDurationThreshold: Double = 20.0,
         language: DictationLanguage = .automatic,
         customWords: [String] = [],
         translateToEnglish: Bool = false,
@@ -153,9 +147,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.autoPaste = autoPaste
         self.launchAtLogin = launchAtLogin
         self.overlayPosition = overlayPosition
-        self.cloudAPIKey = cloudAPIKey
-        self.cloudBaseURL = cloudBaseURL
-        self.cloudDurationThreshold = cloudDurationThreshold
         self.language = language
         self.customWords = customWords
         self.translateToEnglish = translateToEnglish
@@ -166,13 +157,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.historyLimit = min(max(historyLimit, 10), 2_000)
     }
 
-    public var isCloudEnabled: Bool {
-        !cloudAPIKey.isEmpty
-    }
-
     private enum CodingKeys: String, CodingKey {
         case modelIdentifier, hotkey, autoPaste, launchAtLogin, overlayPosition
-        case cloudAPIKey, cloudBaseURL, cloudDurationThreshold
         case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, modelMemoryPolicy, audioRetention, historyLimit
     }
 
@@ -187,9 +173,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         autoPaste = try container.decode(Bool.self, forKey: .autoPaste)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
         overlayPosition = try container.decode(OverlayPosition.self, forKey: .overlayPosition)
-        cloudAPIKey = try container.decodeIfPresent(String.self, forKey: .cloudAPIKey) ?? ""
-        cloudBaseURL = try container.decodeIfPresent(String.self, forKey: .cloudBaseURL) ?? "https://api.openai.com"
-        cloudDurationThreshold = try container.decodeIfPresent(Double.self, forKey: .cloudDurationThreshold) ?? 20.0
         language = try container.decodeIfPresent(DictationLanguage.self, forKey: .language) ?? .automatic
         customWords = try container.decodeIfPresent([String].self, forKey: .customWords) ?? []
         translateToEnglish = try container.decodeIfPresent(Bool.self, forKey: .translateToEnglish) ?? false
@@ -326,6 +309,7 @@ public struct TranscriptChunk: Equatable, Sendable {
 
 public enum TranscriptionBackend: String, Codable, Equatable, Sendable {
     case local
+    // Decode-only compatibility for history created by earlier releases.
     case cloud
     case cloudWithLocalFallback
 }
