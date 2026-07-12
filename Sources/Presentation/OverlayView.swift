@@ -2,10 +2,11 @@ import AppKit
 import SwiftUI
 
 enum OverlayLayout {
-    static let width: CGFloat = 280
+    static let initialWidth: CGFloat = 204
     static let height: CGFloat = 60
     static let cornerRadius: CGFloat = 18
-    static let indicatorWidth: CGFloat = 124
+    static let waveformWidth: CGFloat = 124
+    static let compactIndicatorWidth: CGFloat = 22
 }
 
 public struct OverlayView: View {
@@ -24,26 +25,27 @@ public struct OverlayView: View {
 
             HStack(spacing: 10) {
                 visualIndicator
-                    .frame(width: OverlayLayout.indicatorWidth, height: 30)
+                    .frame(width: indicatorWidth, height: 30)
 
                 Text(displayText)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
                     .contentTransition(.opacity)
 
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    .frame(width: 12)
-                    .opacity(viewModel.isLockedMode ? 1 : 0)
-                    .scaleEffect(viewModel.isLockedMode ? 1 : 0.75)
+                if viewModel.isLockedMode {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .frame(width: 12)
+                        .transition(.scale(scale: 0.75).combined(with: .opacity))
+                }
             }
             .padding(.horizontal, 14)
         }
-        .frame(width: OverlayLayout.width, height: OverlayLayout.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous)
                 .strokeBorder(borderColor, lineWidth: viewModel.isLockedMode ? 1.5 : 1)
@@ -52,6 +54,12 @@ public struct OverlayView: View {
         .compositingGroup()
         .animation(Self.morphAnimation, value: viewModel.visualState)
         .animation(Self.morphAnimation, value: viewModel.isLockedMode)
+    }
+
+    private var indicatorWidth: CGFloat {
+        viewModel.visualState == .recording
+            ? OverlayLayout.waveformWidth
+            : OverlayLayout.compactIndicatorWidth
     }
 
     private var displayText: String {
