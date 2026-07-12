@@ -12,7 +12,12 @@ public final class OverlayWindowController {
     public init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 280, height: 60),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: OverlayLayout.width,
+                height: OverlayLayout.height
+            ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -23,20 +28,13 @@ public final class OverlayWindowController {
         panel.hidesOnDeactivate = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.worksWhenModal = true
         let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         hostingView.sceneBridgingOptions = []
         panel.contentView = hostingView
-
-        viewModel.$visualState
-            .receive(on: RunLoop.main)
-            .sink { [weak self] visualState in
-                self?.updatePanelSize(for: visualState)
-            }
-            .store(in: &cancellables)
 
         viewModel.$isVisible
             .receive(on: RunLoop.main)
@@ -50,7 +48,6 @@ public final class OverlayWindowController {
         guard isEnabled else {
             return
         }
-        updatePanelSize(for: viewModel.visualState)
         positionPanel()
         panel.orderFrontRegardless()
     }
@@ -80,22 +77,4 @@ public final class OverlayWindowController {
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
-    private func updatePanelSize(for visualState: OverlayVisualState) {
-        let size: NSSize
-        switch visualState {
-        case .recording:
-            size = NSSize(width: 280, height: 60)
-        case .processing, .error:
-            size = NSSize(width: 280, height: 60)
-        }
-
-        guard panel.frame.size != size else {
-            return
-        }
-
-        panel.setContentSize(size)
-        if panel.isVisible {
-            positionPanel()
-        }
-    }
 }

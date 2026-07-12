@@ -10,22 +10,23 @@ import Testing
 func overlayViewModelShowsStatusTextOutsideRecording() async {
     let coordinator = MockCoordinator()
     let viewModel = OverlayViewModel(coordinator: coordinator)
+    await waitUntil { coordinator.isStateStreamReady }
 
     coordinator.sendState(.transcribing(partialText: nil))
-    await Task.yield()
+    await waitUntil { viewModel.visualState == .processing }
 
     #expect(viewModel.visualState == .processing)
     #expect(viewModel.statusText == "Transcribing...")
     #expect(viewModel.timerText == "0:00")
 
     coordinator.sendState(.error(.audioCaptureFailed("boom")))
-    await Task.yield()
+    await waitUntil { viewModel.visualState == .error }
 
     #expect(viewModel.visualState == .error)
     #expect(viewModel.statusText == "Audio capture failed: boom")
 
     coordinator.sendState(.recording(startedAt: Date().addingTimeInterval(-2)))
-    await Task.yield()
+    await waitUntil { viewModel.visualState == .recording && viewModel.statusText == nil }
 
     #expect(viewModel.visualState == .recording)
     #expect(viewModel.statusText == nil)
@@ -37,11 +38,12 @@ func overlayViewModelShowsStatusTextOutsideRecording() async {
 func overlayViewModelHidesOnIdle() async {
     let coordinator = MockCoordinator()
     let viewModel = OverlayViewModel(coordinator: coordinator)
+    await waitUntil { coordinator.isStateStreamReady }
 
     coordinator.sendState(.recording(startedAt: Date()))
-    await Task.yield()
+    await waitUntil { viewModel.isVisible }
     coordinator.sendState(.idle())
-    await Task.yield()
+    await waitUntil { !viewModel.isVisible }
 
     #expect(!viewModel.isVisible)
     #expect(viewModel.statusText == nil)
@@ -79,6 +81,10 @@ func liveSpeechWaveformMovesWithTheIncomingBandEnergy() {
 private final class MockCoordinator: DictationSessionCoordinating {
     private var stateContinuation: AsyncStream<DictationSessionState>.Continuation?
     private var meterContinuation: AsyncStream<AudioMeterFrame>.Continuation?
+
+    var isStateStreamReady: Bool {
+        stateContinuation != nil
+    }
 
     func makeStateStream() -> AsyncStream<DictationSessionState> {
         AsyncStream { continuation in
@@ -118,6 +124,16 @@ private final class MockCoordinator: DictationSessionCoordinating {
 
     func sendState(_ state: DictationSessionState) {
         stateContinuation?.yield(state)
+    }
+}
+
+@MainActor
+private func waitUntil(_ predicate: @escaping () -> Bool) async {
+    for _ in 0..<100 {
+        if predicate() {
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(1))
     }
 }
 #endif

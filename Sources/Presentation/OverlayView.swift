@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+enum OverlayLayout {
+    static let width: CGFloat = 280
+    static let height: CGFloat = 60
+    static let cornerRadius: CGFloat = 18
+    static let indicatorWidth: CGFloat = 124
+}
+
 public struct OverlayView: View {
     @ObservedObject private var viewModel: OverlayViewModel
 
@@ -11,34 +18,37 @@ public struct OverlayView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 10) {
-            visualIndicator
+        ZStack {
+            RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor))
 
-            Text(displayText)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(Color(nsColor: .labelColor))
-                .lineLimit(1)
-                .fixedSize()
-                .contentTransition(.interpolate)
+            HStack(spacing: 10) {
+                visualIndicator
+                    .frame(width: OverlayLayout.indicatorWidth, height: 30)
 
-            if viewModel.isLockedMode {
+                Text(displayText)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentTransition(.opacity)
+
                 Image(systemName: "lock.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    .transition(.scale.combined(with: .opacity))
+                    .frame(width: 12)
+                    .opacity(viewModel.isLockedMode ? 1 : 0)
+                    .scaleEffect(viewModel.isLockedMode ? 1 : 0.75)
             }
+            .padding(.horizontal, 14)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
-        }
+        .frame(width: OverlayLayout.width, height: OverlayLayout.height)
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous)
                 .strokeBorder(borderColor, lineWidth: viewModel.isLockedMode ? 1.5 : 1)
         }
+        .clipShape(RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous))
         .compositingGroup()
         .animation(Self.morphAnimation, value: viewModel.visualState)
         .animation(Self.morphAnimation, value: viewModel.isLockedMode)
@@ -58,20 +68,19 @@ public struct OverlayView: View {
         ZStack {
             if viewModel.visualState == .recording {
                 LiveSpeechBarsView(levels: viewModel.waveformLevels)
-                    .frame(width: 124, height: 30)
-                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                    .transition(.opacity)
             }
 
             if viewModel.visualState == .processing {
                 ProcessingOrbView(accent: Color(nsColor: .labelColor))
                     .frame(width: 22, height: 22)
-                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    .transition(.opacity)
             }
 
             if viewModel.visualState == .error {
                 ErrorOrbView()
                     .frame(width: 22, height: 22)
-                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    .transition(.opacity)
             }
         }
     }
