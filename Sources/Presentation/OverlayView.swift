@@ -2,17 +2,17 @@ import AppKit
 import SwiftUI
 
 enum OverlayLayout {
-    static let initialWidth: CGFloat = 204
-    static let height: CGFloat = 60
-    static let cornerRadius: CGFloat = 18
-    static let waveformWidth: CGFloat = 124
-    static let compactIndicatorWidth: CGFloat = 22
+    static let initialWidth: CGFloat = 174
+    static let height: CGFloat = 50
+    static let cornerRadius: CGFloat = 15
+    static let waveformWidth: CGFloat = 104
+    static let compactIndicatorWidth: CGFloat = 18
 }
 
 public struct OverlayView: View {
     @ObservedObject private var viewModel: OverlayViewModel
 
-    private static let morphAnimation: Animation = .spring(duration: 0.4, bounce: 0.12)
+    private static let morphAnimation: Animation = .spring(duration: 0.34, bounce: 0.06)
 
     public init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
@@ -23,12 +23,12 @@ public struct OverlayView: View {
             RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous)
                 .fill(Color(nsColor: .windowBackgroundColor))
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 visualIndicator
-                    .frame(width: indicatorWidth, height: 30)
+                    .frame(width: indicatorWidth, height: 24)
 
                 Text(displayText)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .lineLimit(1)
@@ -37,13 +37,13 @@ public struct OverlayView: View {
 
                 if viewModel.isLockedMode {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                        .frame(width: 12)
+                        .frame(width: 10)
                         .transition(.scale(scale: 0.75).combined(with: .opacity))
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
@@ -81,13 +81,13 @@ public struct OverlayView: View {
 
             if viewModel.visualState == .processing {
                 ProcessingOrbView(accent: Color(nsColor: .labelColor))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 18, height: 18)
                     .transition(.opacity)
             }
 
             if viewModel.visualState == .error {
                 ErrorOrbView()
-                    .frame(width: 22, height: 22)
+                    .frame(width: 18, height: 18)
                     .transition(.opacity)
             }
         }
@@ -107,13 +107,13 @@ private struct LiveSpeechBarsView: View {
         Canvas { context, size in
             let centerY = size.height / 2
             let count = levels.count
-            let gap: CGFloat = 2
+            let gap: CGFloat = 1.5
             let barWidth = max(2, (size.width - (CGFloat(max(count - 1, 0)) * gap)) / CGFloat(max(count, 1)))
 
             for i in 0..<count {
                 let level = levels[i]
                 let intensity = CGFloat(min(max(level, 0), 1))
-                let barH = max(4, intensity * size.height)
+                let barH = max(3, intensity * size.height)
                 let opacity = 0.35 + (Double(intensity) * 0.62)
 
                 let x = CGFloat(i) * (barWidth + gap)
@@ -142,13 +142,13 @@ private struct ProcessingOrbView: View {
                 .fill(accent.opacity(0.08))
 
             Circle()
-                .stroke(accent.opacity(0.16), lineWidth: 2.5)
+                .stroke(accent.opacity(0.16), lineWidth: 2)
 
             Circle()
                 .trim(from: 0.10, to: 0.72)
                 .stroke(
                     accent.opacity(0.88),
-                    style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
                 )
                 .rotationEffect(.degrees(isAnimating ? 360 : 0))
         }
@@ -174,7 +174,7 @@ private struct ErrorOrbView: View {
                 .stroke(Color(nsColor: .systemRed).opacity(0.28), lineWidth: 2)
 
             Image(systemName: "exclamationmark")
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Color(nsColor: .systemRed).opacity(0.92))
         }
     }

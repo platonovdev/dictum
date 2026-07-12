@@ -93,7 +93,7 @@ public final class OverlayWindowController {
 
         let visible = screen.visibleFrame
         let x = visible.midX - width / 2
-        let y = visible.minY + 34
+        let y = visible.minY + 18
         return NSRect(x: x, y: y, width: width, height: OverlayLayout.height)
     }
 
@@ -118,7 +118,8 @@ public final class OverlayWindowController {
         }
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.24
+            context.duration = 0.34
+            context.allowsImplicitAnimation = true
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             panel.animator().setFrame(frame, display: true)
         }
@@ -129,13 +130,13 @@ public final class OverlayWindowController {
         statusText: String?,
         isLockedMode: Bool
     ) -> CGFloat {
-        let horizontalPadding: CGFloat = 28
-        let contentSpacing: CGFloat = 10
+        let horizontalPadding: CGFloat = 24
+        let contentSpacing: CGFloat = 8
 
         switch visualState {
         case .recording:
-            let timerWidth: CGFloat = 42
-            let lockWidth: CGFloat = isLockedMode ? 22 : 0
+            let timerWidth: CGFloat = 38
+            let lockWidth: CGFloat = isLockedMode ? 18 : 0
             return horizontalPadding
                 + OverlayLayout.waveformWidth
                 + contentSpacing
@@ -143,7 +144,7 @@ public final class OverlayWindowController {
                 + lockWidth
         case .processing, .error:
             let text = statusText ?? "Transcribing..."
-            let font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+            let font = NSFont.systemFont(ofSize: 14, weight: .semibold)
             let measuredTextWidth = ceil(
                 (text as NSString).size(withAttributes: [.font: font]).width
             )
@@ -151,7 +152,7 @@ public final class OverlayWindowController {
                 + OverlayLayout.compactIndicatorWidth
                 + contentSpacing
                 + measuredTextWidth
-            return min(max(naturalWidth, 156), 420)
+            return min(max(naturalWidth, 140), 380)
         }
     }
 }
