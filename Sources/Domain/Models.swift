@@ -641,7 +641,6 @@ public enum HotkeyEvent: Equatable, Sendable {
 
 public enum DictationSessionState: Equatable, Sendable {
     case idle(lastTranscript: String? = nil, insertionResult: InsertionResult? = nil)
-    case preparingModel(ModelPreparationStatus)
     case recording(startedAt: Date, isHandsFree: Bool = false)
     case transcribing(partialText: String?)
     case inserting(text: String)

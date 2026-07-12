@@ -12,7 +12,7 @@ public final class MainAppWindowController {
         let rootView = MainAppView(viewModel: viewModel)
 
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -20,7 +20,7 @@ public final class MainAppWindowController {
         window.title = "Dictum"
         window.isReleasedWhenClosed = false
         window.center()
-        window.contentMinSize = NSSize(width: 820, height: 520)
+        window.contentMinSize = NSSize(width: 680, height: 480)
         window.tabbingMode = .disallowed
         window.contentView = NSHostingView(rootView: rootView)
     }

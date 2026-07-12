@@ -12,7 +12,7 @@ public struct HistoryView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
             header
 
             if viewModel.isLoading {
@@ -21,7 +21,7 @@ public struct HistoryView: View {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 8) {
                         ForEach(viewModel.entries) { entry in
                             historyCard(for: entry)
                         }
@@ -32,7 +32,7 @@ public struct HistoryView: View {
 
             footer
         }
-        .padding(24)
+        .padding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(screenBackground)
         .confirmationDialog(
@@ -58,17 +58,13 @@ public struct HistoryView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("History")
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
-
-                Text("Saved dictations, failures, and copied text live here. Deletions are local and permanent.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 23, weight: .semibold, design: .rounded))
 
                 if !viewModel.entries.isEmpty {
                     Text(historySummary)
-                        .font(.caption.weight(.medium))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -114,14 +110,14 @@ public struct HistoryView: View {
     @ViewBuilder
     private func historyCard(for entry: DictationHistoryEntry) -> some View {
         let transcript = entry.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(timestampText(for: entry.startedAt))
-                        .font(.headline)
+                        .font(.system(size: 13, weight: .semibold))
 
                     Text(metaText(for: entry))
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -132,12 +128,12 @@ public struct HistoryView: View {
 
             if transcript.isEmpty {
                 Text(errorText(for: entry))
-                    .font(.subheadline)
+                    .font(.system(size: 12))
                     .foregroundStyle(entry.status == .failed ? .red : .secondary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(transcript)
-                        .font(.body)
+                        .font(.system(size: 13))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -151,41 +147,49 @@ public struct HistoryView: View {
 
             HStack {
                 if entry.audioArtifactPath != nil {
-                    Button(viewModel.playingEntryID == entry.id ? "Stop audio" : "Play audio") {
+                    Button {
                         viewModel.togglePlayback(for: entry)
+                    } label: {
+                        Label(viewModel.playingEntryID == entry.id ? "Stop" : "Play", systemImage: viewModel.playingEntryID == entry.id ? "stop.fill" : "play.fill")
                     }
                     .disabled(!entry.isRetryable || viewModel.actionEntryID == entry.id)
                 }
 
                 if entry.isRetryable {
-                    Button("Retranscribe") {
+                    Button {
                         viewModel.retry(entry)
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
                     }
                     .disabled(viewModel.actionEntryID == entry.id)
                 }
 
-                Button("Copy") {
+                Button {
                     viewModel.copyTranscript(for: entry)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
                 }
                 .disabled(transcript.isEmpty)
 
                 Button(role: .destructive) {
                     entryPendingDeletion = entry
                 } label: {
-                    Text("Delete")
+                    Label("Delete", systemImage: "trash")
                 }
                 .disabled(viewModel.actionEntryID == entry.id)
 
                 Spacer()
             }
+            .labelStyle(.titleAndIcon)
+            .controlSize(.small)
         }
-        .padding(16)
+        .padding(12)
         .background(cardBackground)
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .strokeBorder(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 
     private var footer: some View {
@@ -198,7 +202,7 @@ public struct HistoryView: View {
 
             Spacer()
         }
-        .frame(minHeight: 22)
+        .frame(minHeight: 18)
     }
 
     private func timestampText(for date: Date) -> String {
@@ -277,8 +281,8 @@ public struct HistoryView: View {
     private func statusBadge(for entry: DictationHistoryEntry) -> some View {
         Text(statusLabel(for: entry.status))
             .font(.caption.weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .background(badgeBackground(for: entry.status))
             .foregroundStyle(badgeForeground(for: entry.status))
             .clipShape(Capsule(style: .continuous))
@@ -317,7 +321,7 @@ public struct HistoryView: View {
     }
 
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: 13, style: .continuous)
             .fill(Color(nsColor: .controlBackgroundColor))
     }
 

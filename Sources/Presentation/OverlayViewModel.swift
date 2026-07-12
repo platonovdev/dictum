@@ -5,7 +5,6 @@ import Foundation
 public enum OverlayVisualState: Equatable {
     case recording
     case processing
-    case preparing
     case error
 }
 
@@ -66,15 +65,6 @@ public final class OverlayViewModel: ObservableObject {
             visualState = .recording
             isLockedMode = false
             statusText = nil
-            timerText = "0:00"
-            stopElapsedTimer()
-            stopWaveformTicker()
-            resetWaveform()
-        case .preparingModel(let status):
-            isVisible = true
-            visualState = .preparing
-            isLockedMode = false
-            statusText = status.title
             timerText = "0:00"
             stopElapsedTimer()
             stopWaveformTicker()

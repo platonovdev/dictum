@@ -9,25 +9,48 @@ public struct MainAppView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
-            List(MainAppSection.allCases, selection: $viewModel.selectedSection) { section in
-                Label(section.title, systemImage: section.systemImageName)
-                    .tag(section)
-            }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220)
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .background(sidebarBackground)
-        } detail: {
+        VStack(spacing: 0) {
+            navigationBar
+            Divider()
             detailView
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(detailBackground)
         }
-        .navigationSplitViewStyle(.balanced)
         .background(detailBackground)
         .task(id: viewModel.selectedSection) {
             await viewModel.refreshVisibleSection()
         }
+    }
+
+    private var navigationBar: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.14))
+                Image(systemName: "waveform.badge.mic")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .frame(width: 30, height: 30)
+
+            Text("Dictum")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+
+            Spacer()
+
+            Picker("Section", selection: $viewModel.selectedSection) {
+                ForEach(MainAppSection.allCases) { section in
+                    Label(section.title, systemImage: section.systemImageName)
+                        .tag(section)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 330)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     @ViewBuilder
@@ -46,10 +69,6 @@ public struct MainAppView: View {
         case .statistics:
             StatisticsView(viewModel: viewModel.statisticsViewModel)
         }
-    }
-
-    private var sidebarBackground: Color {
-        Color(nsColor: .underPageBackgroundColor)
     }
 
     private var detailBackground: Color {

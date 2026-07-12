@@ -85,7 +85,7 @@ public final class OverlayWindowController {
         switch visualState {
         case .recording:
             size = NSSize(width: 280, height: 60)
-        case .processing, .preparing, .error:
+        case .processing, .error:
             size = NSSize(width: 280, height: 60)
         }
 

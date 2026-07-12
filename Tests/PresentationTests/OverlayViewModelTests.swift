@@ -11,21 +11,6 @@ func overlayViewModelShowsStatusTextOutsideRecording() async {
     let coordinator = MockCoordinator()
     let viewModel = OverlayViewModel(coordinator: coordinator)
 
-    coordinator.sendState(.preparingModel(
-        ModelPreparationStatus(
-            title: "Checking local model",
-            detail: "Looking for a cached model.",
-            progress: 0.1,
-            startedAt: Date()
-        )
-    ))
-    await Task.yield()
-
-    #expect(viewModel.isVisible)
-    #expect(viewModel.visualState == .preparing)
-    #expect(viewModel.statusText == "Checking local model")
-    #expect(viewModel.timerText == "0:00")
-
     coordinator.sendState(.transcribing(partialText: nil))
     await Task.yield()
 

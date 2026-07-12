@@ -48,7 +48,7 @@ public struct OverlayView: View {
         switch viewModel.visualState {
         case .recording:
             return viewModel.timerText
-        case .processing, .preparing, .error:
+        case .processing, .error:
             return viewModel.statusText ?? ""
         }
     }
@@ -62,8 +62,8 @@ public struct OverlayView: View {
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
 
-            if viewModel.visualState == .processing || viewModel.visualState == .preparing {
-                ProcessingOrbView(accent: processingAccentColor)
+            if viewModel.visualState == .processing {
+                ProcessingOrbView(accent: Color(nsColor: .labelColor))
                     .frame(width: 22, height: 22)
                     .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
@@ -73,15 +73,6 @@ public struct OverlayView: View {
                     .frame(width: 22, height: 22)
                     .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
-        }
-    }
-
-    private var processingAccentColor: Color {
-        switch viewModel.visualState {
-        case .preparing:
-            return Color(nsColor: .secondaryLabelColor)
-        default:
-            return Color(nsColor: .labelColor)
         }
     }
 
