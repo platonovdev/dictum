@@ -12,7 +12,12 @@ public final class OverlayWindowController {
     public init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 280, height: 60),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: OverlayLayout.initialWidth,
+                height: OverlayLayout.height
+            ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -23,7 +28,7 @@ public final class OverlayWindowController {
         panel.hidesOnDeactivate = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.worksWhenModal = true
         let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
         hostingView.wantsLayer = true
@@ -31,12 +36,21 @@ public final class OverlayWindowController {
         hostingView.sceneBridgingOptions = []
         panel.contentView = hostingView
 
-        viewModel.$visualState
-            .receive(on: RunLoop.main)
-            .sink { [weak self] visualState in
-                self?.updatePanelSize(for: visualState)
-            }
-            .store(in: &cancellables)
+        Publishers.CombineLatest3(
+            viewModel.$visualState,
+            viewModel.$statusText,
+            viewModel.$isLockedMode
+        )
+        .debounce(for: .milliseconds(10), scheduler: RunLoop.main)
+        .sink { [weak self] visualState, statusText, isLockedMode in
+            self?.updatePanelFrame(
+                for: visualState,
+                statusText: statusText,
+                isLockedMode: isLockedMode,
+                animated: self?.panel.isVisible == true
+            )
+        }
+        .store(in: &cancellables)
 
         viewModel.$isVisible
             .receive(on: RunLoop.main)
@@ -50,8 +64,12 @@ public final class OverlayWindowController {
         guard isEnabled else {
             return
         }
-        updatePanelSize(for: viewModel.visualState)
-        positionPanel()
+        updatePanelFrame(
+            for: viewModel.visualState,
+            statusText: viewModel.statusText,
+            isLockedMode: viewModel.isLockedMode,
+            animated: false
+        )
         panel.orderFrontRegardless()
     }
 
@@ -68,34 +86,73 @@ public final class OverlayWindowController {
         }
     }
 
-    private func positionPanel() {
+    private func targetFrame(width: CGFloat) -> NSRect? {
         guard let screen = NSScreen.main else {
-            return
+            return nil
         }
 
-        let frame = panel.frame
         let visible = screen.visibleFrame
-        let x = visible.midX - frame.width / 2
-        let y = visible.minY + 34
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        let x = visible.midX - width / 2
+        let y = visible.minY + 18
+        return NSRect(x: x, y: y, width: width, height: OverlayLayout.height)
     }
 
-    private func updatePanelSize(for visualState: OverlayVisualState) {
-        let size: NSSize
-        switch visualState {
-        case .recording:
-            size = NSSize(width: 280, height: 60)
-        case .processing, .preparing, .error:
-            size = NSSize(width: 280, height: 60)
-        }
-
-        guard panel.frame.size != size else {
+    private func updatePanelFrame(
+        for visualState: OverlayVisualState,
+        statusText: String?,
+        isLockedMode: Bool,
+        animated: Bool
+    ) {
+        let width = preferredWidth(
+            for: visualState,
+            statusText: statusText,
+            isLockedMode: isLockedMode
+        )
+        guard let frame = targetFrame(width: width), panel.frame != frame else {
             return
         }
 
-        panel.setContentSize(size)
-        if panel.isVisible {
-            positionPanel()
+        guard animated else {
+            panel.setFrame(frame, display: true)
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.34
+            context.allowsImplicitAnimation = true
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        }
+    }
+
+    private func preferredWidth(
+        for visualState: OverlayVisualState,
+        statusText: String?,
+        isLockedMode: Bool
+    ) -> CGFloat {
+        let horizontalPadding: CGFloat = 24
+        let contentSpacing: CGFloat = 8
+
+        switch visualState {
+        case .recording:
+            let timerWidth: CGFloat = 38
+            let lockWidth: CGFloat = isLockedMode ? 18 : 0
+            return horizontalPadding
+                + OverlayLayout.waveformWidth
+                + contentSpacing
+                + timerWidth
+                + lockWidth
+        case .processing, .error:
+            let text = statusText ?? "Transcribing..."
+            let font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+            let measuredTextWidth = ceil(
+                (text as NSString).size(withAttributes: [.font: font]).width
+            )
+            let naturalWidth = horizontalPadding
+                + OverlayLayout.compactIndicatorWidth
+                + contentSpacing
+                + measuredTextWidth
+            return min(max(naturalWidth, 140), 380)
         }
     }
 }

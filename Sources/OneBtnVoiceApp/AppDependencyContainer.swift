@@ -10,9 +10,7 @@ final class AppDependencyContainer {
     let permissionService = SystemPermissionService()
     let audioCaptureService = AVAudioCaptureService()
     // Handy's whisper.cpp + Metal execution path is the default local engine.
-    let localTranscriptionEngine = WhisperCppTranscriptionEngine()
-    let cloudTranscriptionEngine = CloudTranscriptionEngine()
-    let transcriptionEngine: HybridTranscriptionEngine
+    let transcriptionEngine = WhisperCppTranscriptionEngine()
     let hotkeyService = QuartzHotkeyService()
     let launchAtLoginService = SystemLaunchAtLoginService()
     let audioArchive = FileSystemDictationAudioArchive()
@@ -30,11 +28,6 @@ final class AppDependencyContainer {
     let mainAppViewModel: MainAppViewModel
 
     init() {
-        transcriptionEngine = HybridTranscriptionEngine(
-            localEngine: localTranscriptionEngine,
-            cloudEngine: cloudTranscriptionEngine
-        )
-
         let accessibilityInsertion = AccessibilityTextInsertionService()
         let clipboardFallback = ClipboardPasteFallbackService()
         let textInsertionService = CompositeTextInsertionService(

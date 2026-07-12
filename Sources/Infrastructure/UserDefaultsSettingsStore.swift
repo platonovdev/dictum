@@ -18,9 +18,13 @@ public final class UserDefaultsSettingsStore: SettingsStore {
             return .default
         }
 
-        var settings = try decoder.decode(AppSettings.self, from: data)
-        if settings.modelIdentifier == "large-v3" {
-            settings.modelIdentifier = AppSettings.default.modelIdentifier
+        let settings = try decoder.decode(AppSettings.self, from: data)
+        // Re-encode after schema migrations. This permanently removes legacy
+        // cloud configuration and API-key fields from UserDefaults instead of
+        // merely ignoring them in memory.
+        let sanitizedData = try encoder.encode(settings)
+        if sanitizedData != data {
+            defaults.set(sanitizedData, forKey: key)
         }
         return settings
     }

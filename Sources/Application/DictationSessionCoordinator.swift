@@ -35,10 +35,6 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     private var isModelPrepared = false
     private var recordingModelPreparationTask: Task<Void, Never>?
     private var recordingModelPreparationError: AppError?
-    // Progress can arrive from a model worker after `prepareModel` has already
-    // returned. Track the active request so a final “ready” update cannot put
-    // the overlay back into the preparing state after we have become idle.
-    private var activeModelPreparationID: UUID?
     private var activeSessionID = UUID()
     private var detectedSpeechDuration: TimeInterval = 0
     private var recordingStartedAt: Date?
@@ -934,30 +930,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     }
 
     private func prepareLocalModel(named modelIdentifier: String) async throws {
-        let preparationID = UUID()
-        activeModelPreparationID = preparationID
-
-        do {
-            try await transcriptionEngine.prepareModel(named: modelIdentifier) { [weak self] status in
-                // The engine is allowed to invoke this callback from a worker.
-                // Do not let a queued progress event resurrect the preparation
-                // overlay after a successful return.
-                Task { @MainActor [weak self] in
-                    guard let self, self.activeModelPreparationID == preparationID else {
-                        return
-                    }
-                    self.transition(to: .preparingModel(status))
-                }
-            }
-            if activeModelPreparationID == preparationID {
-                activeModelPreparationID = nil
-            }
-        } catch {
-            if activeModelPreparationID == preparationID {
-                activeModelPreparationID = nil
-            }
-            throw error
-        }
+        // Model preparation is intentionally silent. Recording starts first
+        // when needed, and only actionable failures surface in the overlay.
+        try await transcriptionEngine.prepareModel(named: modelIdentifier) { _ in }
     }
 
     private func prepareModelWhileRecording(named modelIdentifier: String) {
