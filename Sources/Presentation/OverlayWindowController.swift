@@ -7,6 +7,7 @@ public final class OverlayWindowController {
     private let panel: NSPanel
     private let viewModel: OverlayViewModel
     private var cancellables: Set<AnyCancellable> = []
+    private var isEnabled = true
 
     public init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
@@ -46,6 +47,9 @@ public final class OverlayWindowController {
     }
 
     public func show() {
+        guard isEnabled else {
+            return
+        }
         updatePanelSize(for: viewModel.visualState)
         positionPanel()
         panel.orderFrontRegardless()
@@ -53,6 +57,15 @@ public final class OverlayWindowController {
 
     public func hide() {
         panel.orderOut(nil)
+    }
+
+    public func setEnabled(_ isEnabled: Bool) {
+        self.isEnabled = isEnabled
+        if !isEnabled {
+            hide()
+        } else if viewModel.isVisible {
+            show()
+        }
     }
 
     private func positionPanel() {

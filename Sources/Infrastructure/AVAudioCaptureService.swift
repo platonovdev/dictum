@@ -122,22 +122,33 @@ private final class TapSink: @unchecked Sendable {
 }
 
 private final class AudioMeterAnalyzer: @unchecked Sendable {
-    private let bandWeights: [[Float]] = [
-        [0.08, 0.20, 1.00],
-        [0.12, 0.36, 0.90],
-        [0.28, 0.64, 0.52],
-        [0.54, 0.82, 0.24],
-        [1.00, 0.46, 0.10],
-        [0.54, 0.82, 0.24],
-        [0.28, 0.64, 0.52],
-        [0.12, 0.36, 0.90],
-        [0.08, 0.20, 1.00]
-    ]
+    private static let fftSize = 2048
+    private static let fftLog2n = vDSP_Length(11)
+    private static let spectrumBandCount = 15
+
+    private let fftSetup: FFTSetup
+    private var fftWindow = [Float](repeating: 0, count: fftSize)
+    private var fftInput = [Float](repeating: 0, count: fftSize)
+    private var fftReal = [Float](repeating: 0, count: fftSize / 2)
+    private var fftImaginary = [Float](repeating: 0, count: fftSize / 2)
+    private var fftMagnitudes = [Float](repeating: 0, count: fftSize / 2)
 
     private var slowLowPass: Float = 0
     private var fastLowPass: Float = 0
-    private var smoothedBands = Array(repeating: Float(0), count: 9)
+    private var smoothedBands = Array(repeating: Float(0), count: spectrumBandCount)
     private var speechDetector = RealtimeSpeechActivityDetector()
+
+    init() {
+        guard let fftSetup = vDSP_create_fftsetup(Self.fftLog2n, FFTRadix(kFFTRadix2)) else {
+            fatalError("Could not create the audio spectrum FFT setup.")
+        }
+        self.fftSetup = fftSetup
+        vDSP_hann_window(&fftWindow, vDSP_Length(Self.fftSize), Int32(vDSP_HANN_NORM))
+    }
+
+    deinit {
+        vDSP_destroy_fftsetup(fftSetup)
+    }
 
     func analyze(buffer: AVAudioPCMBuffer) -> AudioMeterFrame {
         guard let channelData = buffer.floatChannelData else {
@@ -150,12 +161,11 @@ private final class AudioMeterAnalyzer: @unchecked Sendable {
         }
 
         let channel = channelData[0]
-        let segmentSize = max(frameLength / bandWeights.count, 1)
         var overallEnergy: Float = 0
         var lowEnergy: Float = 0
         var midEnergy: Float = 0
         var highEnergy: Float = 0
-        var segmentPeaks = Array(repeating: Float(0), count: bandWeights.count)
+        var overallPeak: Float = 0
 
         for index in 0..<frameLength {
             let sample = channel[index]
@@ -172,13 +182,11 @@ private final class AudioMeterAnalyzer: @unchecked Sendable {
             midEnergy += midSample * midSample
             highEnergy += highSample * highSample
 
-            let segmentIndex = min(index / segmentSize, segmentPeaks.count - 1)
-            segmentPeaks[segmentIndex] = max(segmentPeaks[segmentIndex], abs(sample))
+            overallPeak = max(overallPeak, abs(sample))
         }
 
         let overallLevel = normalizedLevel(energy: overallEnergy, frameLength: frameLength, gain: 28)
         let overallRMS = sqrt(overallEnergy / Float(frameLength))
-        let overallPeak = segmentPeaks.max() ?? 0
         let frameDuration = TimeInterval(buffer.frameLength) / buffer.format.sampleRate
         let rmsDB = decibels(for: overallRMS)
         let peakDB = decibels(for: overallPeak)
@@ -194,30 +202,11 @@ private final class AudioMeterAnalyzer: @unchecked Sendable {
             frameDuration: Float(frameDuration)
         )
         let visualLevel = normalizedVisualLevel(rms: overallRMS, peak: overallPeak)
-        let lowLevel = normalizedLevel(energy: lowEnergy, frameLength: frameLength, gain: 46)
-        let midLevel = normalizedLevel(energy: midEnergy, frameLength: frameLength, gain: 60)
-        let highLevel = normalizedLevel(energy: highEnergy, frameLength: frameLength, gain: 88)
-
-        var bands: [Float] = []
-        bands.reserveCapacity(bandWeights.count)
-
-        for index in bandWeights.indices {
-            let weights = bandWeights[index]
-            let envelopeLevel = min(pow(segmentPeaks[index] * 4.8, 0.72), 1)
-            let rawLevel = min(
-                max(
-                    (lowLevel * weights[0]) +
-                    (midLevel * weights[1]) +
-                    (highLevel * weights[2]) +
-                    (envelopeLevel * 0.22),
-                    0
-                ),
-                1
-            )
-            let attack: Float = rawLevel > smoothedBands[index] ? 0.58 : 0.18
-            smoothedBands[index] += (rawLevel - smoothedBands[index]) * attack
-            bands.append(smoothedBands[index])
-        }
+        let bands = spectrumBands(
+            channel: channel,
+            frameLength: frameLength,
+            sampleRate: buffer.format.sampleRate
+        )
 
         return AudioMeterFrame(
             overallLevel: overallLevel,
@@ -232,8 +221,73 @@ private final class AudioMeterAnalyzer: @unchecked Sendable {
     func reset() {
         slowLowPass = 0
         fastLowPass = 0
-        smoothedBands = Array(repeating: 0, count: bandWeights.count)
+        smoothedBands = Array(repeating: 0, count: Self.spectrumBandCount)
         speechDetector.reset()
+    }
+
+    private func spectrumBands(
+        channel: UnsafePointer<Float>,
+        frameLength: Int,
+        sampleRate: Double
+    ) -> [Float] {
+        let availableSamples = min(frameLength, Self.fftSize)
+        let sourceOffset = max(frameLength - availableSamples, 0)
+        fftWindow.withUnsafeBufferPointer { window in
+            fftInput.withUnsafeMutableBufferPointer { destination in
+                destination.initialize(repeating: 0)
+                vDSP_vmul(
+                    channel.advanced(by: sourceOffset),
+                    1,
+                    window.baseAddress!.advanced(by: Self.fftSize - availableSamples),
+                    1,
+                    destination.baseAddress!.advanced(by: Self.fftSize - availableSamples),
+                    1,
+                    vDSP_Length(availableSamples)
+                )
+            }
+        }
+
+        fftInput.withUnsafeBufferPointer { input in
+            fftReal.withUnsafeMutableBufferPointer { real in
+                fftImaginary.withUnsafeMutableBufferPointer { imaginary in
+                    var splitComplex = DSPSplitComplex(
+                        realp: real.baseAddress!,
+                        imagp: imaginary.baseAddress!
+                    )
+                    input.baseAddress!.withMemoryRebound(
+                        to: DSPComplex.self,
+                        capacity: Self.fftSize / 2
+                    ) { complexInput in
+                        vDSP_ctoz(complexInput, 2, &splitComplex, 1, vDSP_Length(Self.fftSize / 2))
+                    }
+                    vDSP_fft_zrip(fftSetup, &splitComplex, 1, Self.fftLog2n, FFTDirection(FFT_FORWARD))
+                    vDSP_zvmags(&splitComplex, 1, &fftMagnitudes, 1, vDSP_Length(Self.fftSize / 2))
+                }
+            }
+        }
+
+        let minimumFrequency: Float = 70
+        let maximumFrequency = min(Float(sampleRate / 2) * 0.92, 8_000)
+        let ratio = maximumFrequency / minimumFrequency
+        let frequencyPerBin = Float(sampleRate) / Float(Self.fftSize)
+        var result = [Float]()
+        result.reserveCapacity(Self.spectrumBandCount)
+
+        for index in 0..<Self.spectrumBandCount {
+            let start = minimumFrequency * pow(ratio, Float(index) / Float(Self.spectrumBandCount))
+            let end = minimumFrequency * pow(ratio, Float(index + 1) / Float(Self.spectrumBandCount))
+            let lowerBin = max(1, Int(start / frequencyPerBin))
+            let upperBin = min(fftMagnitudes.count - 1, max(lowerBin, Int(end / frequencyPerBin)))
+            let peakPower = fftMagnitudes[lowerBin...upperBin].max() ?? 0
+            let decibels = 10 * log10(max(peakPower, 0.000_000_000_001))
+            let normalized = min(max((decibels + 86) / 58, 0), 1)
+            let target = pow(normalized, 0.72)
+            let smoothing: Float = target > smoothedBands[index] ? 0.82 : 0.22
+            smoothedBands[index] += (target - smoothedBands[index]) * smoothing
+            result.append(smoothedBands[index])
+        }
+
+        return result
     }
 
     private func normalizedLevel(energy: Float, frameLength: Int, gain: Float) -> Float {

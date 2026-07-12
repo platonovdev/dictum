@@ -12,10 +12,7 @@ public enum OverlayVisualState: Equatable {
 @MainActor
 public final class OverlayViewModel: ObservableObject {
     private enum WaveformConstants {
-        /// Number of visible bars in the scrolling timeline.
-        static let barCount = 24
-        /// How often we push a new bar (controls scroll speed).
-        static let pushInterval: Duration = .milliseconds(60)
+        static let pushInterval: Duration = .milliseconds(40)
     }
 
     @Published public private(set) var isVisible = false
@@ -24,8 +21,8 @@ public final class OverlayViewModel: ObservableObject {
     @Published public private(set) var statusText: String?
     /// Scrolling timeline buffer — newest bar at the end (right side).
     @Published public private(set) var waveformLevels = Array(
-        repeating: Float(0.022),
-        count: 24
+        repeating: LiveSpeechWaveform.idleLevel,
+        count: LiveSpeechWaveform.barCount
     )
     @Published public private(set) var timerText = "0:00"
 
@@ -33,8 +30,8 @@ public final class OverlayViewModel: ObservableObject {
     private var elapsedTask: Task<Void, Never>?
     private var waveformTask: Task<Void, Never>?
 
-    private var latestVisualLevel: Float = 0
-    private var waveformLeveler = AdaptiveWaveformLeveler()
+    private var latestMeterFrame = AudioMeterFrame.silent
+    private var waveform = LiveSpeechWaveform()
 
     public init(coordinator: DictationSessionCoordinating) {
         tasks.append(Task { [weak self] in
@@ -51,12 +48,7 @@ public final class OverlayViewModel: ObservableObject {
                 guard let self else {
                     return
                 }
-                if meterFrame.isSpeechDetected {
-                    self.latestVisualLevel = meterFrame.visualLevel
-                } else {
-                    let residualNoise = meterFrame.visualLevel * (0.08 + (meterFrame.speechConfidence * 0.20))
-                    self.latestVisualLevel = residualNoise
-                }
+                self.latestMeterFrame = meterFrame
             }
         })
     }
@@ -131,7 +123,7 @@ public final class OverlayViewModel: ObservableObject {
                     guard let self, self.visualState == .recording else {
                         return
                     }
-                    self.pushWaveformBar()
+                    self.updateWaveform()
                 }
             }
         }
@@ -142,24 +134,14 @@ public final class OverlayViewModel: ObservableObject {
         waveformTask = nil
     }
 
-    /// Compute a single bar height from the current volume, push it onto the
-    /// right end of the buffer, and drop the oldest bar on the left — creating
-    /// a scrolling timeline effect.
-    private func pushWaveformBar() {
-        let barHeight = waveformLeveler.push(inputLevel: latestVisualLevel)
-
-        // Shift buffer left, append new bar on the right
-        waveformLevels.append(barHeight)
-        if waveformLevels.count > WaveformConstants.barCount {
-            waveformLevels.removeFirst(waveformLevels.count - WaveformConstants.barCount)
-        }
+    private func updateWaveform() {
+        waveformLevels = waveform.update(with: latestMeterFrame)
     }
 
     private func resetWaveform() {
-        latestVisualLevel = 0
-        waveformLeveler.reset()
-        let idle = AdaptiveWaveformLeveler.idleLevel
-        waveformLevels = Array(repeating: idle, count: WaveformConstants.barCount)
+        latestMeterFrame = .silent
+        waveform.reset()
+        waveformLevels = Array(repeating: LiveSpeechWaveform.idleLevel, count: LiveSpeechWaveform.barCount)
     }
 
     private func startElapsedTimer(from date: Date) {

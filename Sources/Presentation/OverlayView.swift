@@ -57,8 +57,8 @@ public struct OverlayView: View {
     private var visualIndicator: some View {
         ZStack {
             if viewModel.visualState == .recording {
-                MonochromeWaveformView(levels: viewModel.waveformLevels)
-                    .frame(width: 120, height: 28)
+                LiveSpeechBarsView(levels: viewModel.waveformLevels)
+                    .frame(width: 124, height: 30)
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
 
@@ -92,27 +92,23 @@ public struct OverlayView: View {
     }
 }
 
-private struct MonochromeWaveformView: View {
+private struct LiveSpeechBarsView: View {
     let levels: [Float]
-
-    private let barWidth: CGFloat = 3.5
-    private let barGap: CGFloat = 1.5
-    private let cornerRadius: CGFloat = 1.5
 
     var body: some View {
         Canvas { context, size in
-            let step = barWidth + barGap
             let centerY = size.height / 2
             let count = levels.count
+            let gap: CGFloat = 2
+            let barWidth = max(2, (size.width - (CGFloat(max(count - 1, 0)) * gap)) / CGFloat(max(count, 1)))
 
             for i in 0..<count {
                 let level = levels[i]
                 let intensity = CGFloat(min(max(level, 0), 1))
-                let barH = max(2, intensity * size.height * 0.9)
-                let opacity = 0.28 + (Double(intensity) * 0.52)
+                let barH = max(4, intensity * size.height)
+                let opacity = 0.35 + (Double(intensity) * 0.62)
 
-                let x = size.width - CGFloat(count - i) * step
-                guard x + barWidth > 0 else { continue }
+                let x = CGFloat(i) * (barWidth + gap)
 
                 let rect = CGRect(
                     x: x,
@@ -120,8 +116,8 @@ private struct MonochromeWaveformView: View {
                     width: barWidth,
                     height: barH
                 )
-                let path = Path(roundedRect: rect, cornerRadius: cornerRadius)
-                context.fill(path, with: .color(Color(nsColor: .labelColor).opacity(opacity)))
+                let path = Path(roundedRect: rect, cornerRadius: barWidth / 2)
+                context.fill(path, with: .color(Color.accentColor.opacity(opacity)))
             }
         }
         .clipped()

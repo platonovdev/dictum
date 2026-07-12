@@ -166,7 +166,8 @@ func coordinatorRetryUpdatesTheSameHistoryEntry() async throws {
     #expect(await archive.deletedPaths.isEmpty)
 }
 
-private actor MockHistoryStore: DictationHistoryStore {
+@MainActor
+private final class MockHistoryStore: DictationHistoryStore {
     private(set) var entries: [DictationHistoryEntry]
 
     init(entries: [DictationHistoryEntry] = []) {

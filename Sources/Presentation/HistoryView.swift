@@ -5,6 +5,7 @@ import SwiftUI
 
 public struct HistoryView: View {
     @ObservedObject private var viewModel: HistoryViewModel
+    @State private var entryPendingDeletion: DictationHistoryEntry? = nil
 
     public init(viewModel: HistoryViewModel) {
         self.viewModel = viewModel
@@ -34,6 +35,25 @@ public struct HistoryView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(screenBackground)
+        .confirmationDialog(
+            "Delete this dictation?",
+            isPresented: Binding(
+                get: { entryPendingDeletion != nil },
+                set: { if !$0 { entryPendingDeletion = nil } }
+            )
+        ) {
+            Button("Delete transcript and recording", role: .destructive) {
+                if let entryPendingDeletion {
+                    viewModel.delete(entryPendingDeletion)
+                }
+                entryPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) {
+                entryPendingDeletion = nil
+            }
+        } message: {
+            Text("This permanently removes the transcript and any retained audio from this Mac.")
+        }
     }
 
     private var header: some View {
@@ -45,6 +65,12 @@ public struct HistoryView: View {
                 Text("Saved dictations, failures, and copied text live here. Deletions are local and permanent.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                if !viewModel.entries.isEmpty {
+                    Text(historySummary)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
@@ -124,8 +150,15 @@ public struct HistoryView: View {
             }
 
             HStack {
+                if entry.audioArtifactPath != nil {
+                    Button(viewModel.playingEntryID == entry.id ? "Stop audio" : "Play audio") {
+                        viewModel.togglePlayback(for: entry)
+                    }
+                    .disabled(!entry.isRetryable || viewModel.actionEntryID == entry.id)
+                }
+
                 if entry.isRetryable {
-                    Button("Retry") {
+                    Button("Retranscribe") {
                         viewModel.retry(entry)
                     }
                     .disabled(viewModel.actionEntryID == entry.id)
@@ -137,7 +170,7 @@ public struct HistoryView: View {
                 .disabled(transcript.isEmpty)
 
                 Button(role: .destructive) {
-                    viewModel.delete(entry)
+                    entryPendingDeletion = entry
                 } label: {
                     Text("Delete")
                 }
@@ -157,10 +190,10 @@ public struct HistoryView: View {
 
     private var footer: some View {
         HStack {
-            if let message = viewModel.statusMessage ?? viewModel.errorMessage {
+            if let message = viewModel.errorMessage ?? viewModel.statusMessage {
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(viewModel.errorMessage == nil ? Color.secondary : Color.red)
             }
 
             Spacer()
@@ -190,7 +223,20 @@ public struct HistoryView: View {
         if let transcriptionDuration = entry.transcriptionDuration, transcriptionDuration > 0 {
             parts.append(String(format: "%.1fs", transcriptionDuration))
         }
+        if entry.audioArtifactPath != nil {
+            parts.append(entry.isRetryable ? "Audio saved" : "Audio missing")
+        }
+        if entry.retryCount > 0 {
+            parts.append("Retried \(entry.retryCount)×")
+        }
         return parts.joined(separator: " • ")
+    }
+
+    private var historySummary: String {
+        let audioCount = viewModel.entries.filter(\.isRetryable).count
+        let entryLabel = viewModel.entries.count == 1 ? "dictation" : "dictations"
+        let audioLabel = audioCount == 1 ? "recording available" : "recordings available"
+        return "\(viewModel.entries.count) \(entryLabel) • \(audioCount) \(audioLabel)"
     }
 
     private func backendLabel(for backend: TranscriptionBackend) -> String {

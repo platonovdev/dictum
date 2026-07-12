@@ -4,6 +4,7 @@ import Foundation
 import Testing
 
 @Test
+@MainActor
 func cloudStreamEventParsesDeltaPayload() {
     let event = CloudTranscriptionEngine.parseStreamEvent(
         name: "transcript.text.delta",
@@ -14,6 +15,7 @@ func cloudStreamEventParsesDeltaPayload() {
 }
 
 @Test
+@MainActor
 func cloudStreamEventParsesDonePayload() {
     let event = CloudTranscriptionEngine.parseStreamEvent(
         name: "transcript.text.done",
@@ -24,6 +26,7 @@ func cloudStreamEventParsesDonePayload() {
 }
 
 @Test
+@MainActor
 func cloudStreamEventIgnoresDoneSentinel() {
     let event = CloudTranscriptionEngine.parseStreamEvent(
         name: "transcript.text.done",

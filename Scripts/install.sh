@@ -30,6 +30,12 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+# SwiftPM exposes binary-target frameworks next to the executable and links
+# them with @loader_path. Keep whisper.cpp there in the development bundle so
+# the Metal runtime is available after installing outside Xcode.
+if [[ -d "$BUILD_DIR/whisper.framework" ]]; then
+  cp -R "$BUILD_DIR/whisper.framework" "$APP_BUNDLE/Contents/MacOS/"
+fi
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 find "$BUILD_DIR" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$APP_BUNDLE/Contents/Resources/" \;
 

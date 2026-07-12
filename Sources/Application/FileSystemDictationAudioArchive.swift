@@ -73,6 +73,28 @@ public final class FileSystemDictationAudioArchive: DictationAudioArchive, @unch
         try? fileManager.removeItem(at: url)
     }
 
+    public func cleanupUnreferencedAudio(keepingPaths: Set<String>, olderThan cutoff: Date) async {
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: archiveDirectoryURL,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        let retainedPaths = Set(keepingPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+        for fileURL in files where ["wav", "m4a"].contains(fileURL.pathExtension.lowercased()) {
+            let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
+            guard values?.isRegularFile == true,
+                  let modifiedAt = values?.contentModificationDate,
+                  modifiedAt < cutoff,
+                  !retainedPaths.contains(fileURL.standardizedFileURL.path) else {
+                continue
+            }
+            try? fileManager.removeItem(at: fileURL)
+        }
+    }
+
     private func ensureArchiveDirectoryExists() throws {
         if fileManager.fileExists(atPath: archiveDirectoryURL.path) {
             return

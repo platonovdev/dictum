@@ -18,6 +18,90 @@ public enum OverlayPosition: String, CaseIterable, Codable, Sendable {
     case topCenter
 }
 
+public enum DictationLanguage: String, CaseIterable, Codable, Sendable {
+    case automatic
+    case russian
+    case english
+    case ukrainian
+    case german
+    case spanish
+    case french
+
+    public var displayName: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .russian: "Russian"
+        case .english: "English"
+        case .ukrainian: "Ukrainian"
+        case .german: "German"
+        case .spanish: "Spanish"
+        case .french: "French"
+        }
+    }
+
+    public var whisperCode: String? {
+        switch self {
+        case .automatic: nil
+        case .russian: "ru"
+        case .english: "en"
+        case .ukrainian: "uk"
+        case .german: "de"
+        case .spanish: "es"
+        case .french: "fr"
+        }
+    }
+}
+
+public enum AudioRetentionPolicy: String, CaseIterable, Codable, Sendable {
+    case none
+    case oneDay
+    case sevenDays
+    case forever
+
+    public var displayName: String {
+        switch self {
+        case .none: "Don't keep recordings"
+        case .oneDay: "Keep for 1 day"
+        case .sevenDays: "Keep for 7 days"
+        case .forever: "Keep until deleted"
+        }
+    }
+
+    public func keepsAudio(startedAt: Date, now: Date = Date()) -> Bool {
+        switch self {
+        case .none: false
+        case .oneDay: now.timeIntervalSince(startedAt) <= 86_400
+        case .sevenDays: now.timeIntervalSince(startedAt) <= 604_800
+        case .forever: true
+        }
+    }
+}
+
+public enum ModelMemoryPolicy: String, CaseIterable, Codable, Sendable {
+    case keepLoaded
+    case unloadAfterFiveMinutes
+    case unloadAfterFifteenMinutes
+    case unloadImmediately
+
+    public var displayName: String {
+        switch self {
+        case .keepLoaded: "Keep model ready"
+        case .unloadAfterFiveMinutes: "Release after 5 minutes"
+        case .unloadAfterFifteenMinutes: "Release after 15 minutes"
+        case .unloadImmediately: "Release after every dictation"
+        }
+    }
+
+    public var idleDuration: Duration? {
+        switch self {
+        case .keepLoaded: nil
+        case .unloadAfterFiveMinutes: .seconds(300)
+        case .unloadAfterFifteenMinutes: .seconds(900)
+        case .unloadImmediately: .zero
+        }
+    }
+}
+
 public struct HotkeyConfiguration: Codable, Hashable, Sendable {
     public var kind: HotkeyKind
 
@@ -37,6 +121,14 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var cloudAPIKey: String
     public var cloudBaseURL: String
     public var cloudDurationThreshold: Double
+    public var language: DictationLanguage
+    public var customWords: [String]
+    public var translateToEnglish: Bool
+    public var appendTrailingSpace: Bool
+    public var showOverlay: Bool
+    public var modelMemoryPolicy: ModelMemoryPolicy
+    public var audioRetention: AudioRetentionPolicy
+    public var historyLimit: Int
 
     public init(
         modelIdentifier: String,
@@ -46,7 +138,15 @@ public struct AppSettings: Codable, Equatable, Sendable {
         overlayPosition: OverlayPosition,
         cloudAPIKey: String = "",
         cloudBaseURL: String = "https://api.openai.com",
-        cloudDurationThreshold: Double = 20.0
+        cloudDurationThreshold: Double = 20.0,
+        language: DictationLanguage = .automatic,
+        customWords: [String] = [],
+        translateToEnglish: Bool = false,
+        appendTrailingSpace: Bool = true,
+        showOverlay: Bool = true,
+        modelMemoryPolicy: ModelMemoryPolicy = .unloadAfterFiveMinutes,
+        audioRetention: AudioRetentionPolicy = .sevenDays,
+        historyLimit: Int = 200
     ) {
         self.modelIdentifier = modelIdentifier
         self.hotkey = hotkey
@@ -56,6 +156,14 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.cloudAPIKey = cloudAPIKey
         self.cloudBaseURL = cloudBaseURL
         self.cloudDurationThreshold = cloudDurationThreshold
+        self.language = language
+        self.customWords = customWords
+        self.translateToEnglish = translateToEnglish
+        self.appendTrailingSpace = appendTrailingSpace
+        self.showOverlay = showOverlay
+        self.modelMemoryPolicy = modelMemoryPolicy
+        self.audioRetention = audioRetention
+        self.historyLimit = min(max(historyLimit, 10), 2_000)
     }
 
     public var isCloudEnabled: Bool {
@@ -65,11 +173,16 @@ public struct AppSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case modelIdentifier, hotkey, autoPaste, launchAtLogin, overlayPosition
         case cloudAPIKey, cloudBaseURL, cloudDurationThreshold
+        case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, modelMemoryPolicy, audioRetention, historyLimit
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        modelIdentifier = try container.decode(String.self, forKey: .modelIdentifier)
+        let persistedModelIdentifier = try container.decode(String.self, forKey: .modelIdentifier)
+        // Release builds before the whisper.cpp migration stored Core ML
+        // variant names. Keep those installations usable without asking the
+        // user to manually revisit Settings.
+        modelIdentifier = Self.migratedModelIdentifier(persistedModelIdentifier)
         hotkey = try container.decode(HotkeyConfiguration.self, forKey: .hotkey)
         autoPaste = try container.decode(Bool.self, forKey: .autoPaste)
         launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
@@ -77,48 +190,56 @@ public struct AppSettings: Codable, Equatable, Sendable {
         cloudAPIKey = try container.decodeIfPresent(String.self, forKey: .cloudAPIKey) ?? ""
         cloudBaseURL = try container.decodeIfPresent(String.self, forKey: .cloudBaseURL) ?? "https://api.openai.com"
         cloudDurationThreshold = try container.decodeIfPresent(Double.self, forKey: .cloudDurationThreshold) ?? 20.0
+        language = try container.decodeIfPresent(DictationLanguage.self, forKey: .language) ?? .automatic
+        customWords = try container.decodeIfPresent([String].self, forKey: .customWords) ?? []
+        translateToEnglish = try container.decodeIfPresent(Bool.self, forKey: .translateToEnglish) ?? false
+        appendTrailingSpace = try container.decodeIfPresent(Bool.self, forKey: .appendTrailingSpace) ?? true
+        showOverlay = try container.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? true
+        modelMemoryPolicy = try container.decodeIfPresent(ModelMemoryPolicy.self, forKey: .modelMemoryPolicy) ?? .unloadAfterFiveMinutes
+        audioRetention = try container.decodeIfPresent(AudioRetentionPolicy.self, forKey: .audioRetention) ?? .sevenDays
+        historyLimit = min(max(try container.decodeIfPresent(Int.self, forKey: .historyLimit) ?? 200, 10), 2_000)
     }
 
     public static let `default` = AppSettings(
-        modelIdentifier: "openai_whisper-large-v3_turbo",
+        modelIdentifier: "ggml-large-v3-turbo",
         hotkey: .default,
         autoPaste: true,
         launchAtLogin: false,
         overlayPosition: .topCenter
     )
+
+    private static func migratedModelIdentifier(_ identifier: String) -> String {
+        switch identifier {
+        case "openai_whisper-large-v3_turbo", "large-v3", "small", "base":
+            "ggml-large-v3-turbo"
+        default:
+            identifier
+        }
+    }
 }
 
 public struct TranscriptionModelOption: Equatable, Sendable {
     public let id: String
     public let title: String
     public let detail: String
+    public let downloadSize: String
+    public let isRecommended: Bool
 
-    public init(id: String, title: String, detail: String) {
+    public init(id: String, title: String, detail: String, downloadSize: String = "Downloaded on first use", isRecommended: Bool = false) {
         self.id = id
         self.title = title
         self.detail = detail
+        self.downloadSize = downloadSize
+        self.isRecommended = isRecommended
     }
 
     public static let all: [TranscriptionModelOption] = [
         TranscriptionModelOption(
-            id: "openai_whisper-large-v3_turbo",
-            title: "large-v3 turbo",
-            detail: "Fastest high-quality option. Best default for local dictation."
-        ),
-        TranscriptionModelOption(
-            id: "large-v3",
-            title: "large-v3",
-            detail: "Higher quality, but usually slower than turbo."
-        ),
-        TranscriptionModelOption(
-            id: "small",
-            title: "small",
-            detail: "Smaller download and faster startup, with lower accuracy."
-        ),
-        TranscriptionModelOption(
-            id: "base",
-            title: "base",
-            detail: "Lightweight fallback for older or constrained setups."
+            id: "ggml-large-v3-turbo",
+            title: "Whisper Turbo",
+            detail: "Handy-style GGML model: fast, accurate multilingual dictation with Metal.",
+            downloadSize: "1.55 GB",
+            isRecommended: true
         )
     ]
 
@@ -242,6 +363,7 @@ public enum DictationHistoryStatus: String, Codable, Equatable, Sendable {
 public enum DictationFailureStage: String, Codable, Equatable, Sendable {
     case audioCapture
     case transcription
+    case insertion
     case persistence
 }
 
@@ -385,7 +507,17 @@ public extension DictationHistoryEntry {
     }
 
     var isRetryable: Bool {
-        audioArtifactPath != nil
+        guard let audioArtifactPath else {
+            return false
+        }
+        return FileManager.default.fileExists(atPath: audioArtifactPath)
+    }
+
+    /// Failed recognition and empty-result recordings are recovery artifacts.
+    /// They stay available until a successful retry or explicit deletion,
+    /// even when normal successful-recording retention is disabled.
+    var needsRecoveryAudio: Bool {
+        status == .emptyTranscript || (status == .failed && failureStage != .insertion)
     }
 
     var countsTowardStatistics: Bool {
@@ -517,6 +649,9 @@ public enum InsertionResult: Equatable, Sendable {
 public enum HotkeyEvent: Equatable, Sendable {
     case pressed
     case released
+    case pressedAt(TimeInterval)
+    case releasedAt(TimeInterval)
+    case lockRecording
     case escapePressed
 }
 

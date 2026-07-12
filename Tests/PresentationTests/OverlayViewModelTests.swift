@@ -64,37 +64,31 @@ func overlayViewModelHidesOnIdle() async {
 }
 
 @Test
-func adaptiveWaveformLevelerSuppressesSteadyNoiseAndRespondsToSpeech() {
-    var leveler = AdaptiveWaveformLeveler()
+func liveSpeechWaveformMovesWithTheIncomingBandEnergy() {
+    var waveform = LiveSpeechWaveform()
+    let quiet = AudioMeterFrame(
+        overallLevel: 0.01,
+        visualLevel: 0.01,
+        speechConfidence: 0,
+        isSpeechDetected: false,
+        frameDuration: 0.04,
+        bands: Array(repeating: 0.01, count: 9)
+    )
+    let speech = AudioMeterFrame(
+        overallLevel: 0.48,
+        visualLevel: 0.62,
+        speechConfidence: 0.95,
+        isSpeechDetected: true,
+        frameDuration: 0.04,
+        bands: [0.18, 0.36, 0.68, 0.42, 0.78, 0.51, 0.29, 0.63, 0.40]
+    )
 
-    var noiseOutput: Float = 0
-    for _ in 0..<24 {
-        noiseOutput = leveler.push(inputLevel: 0.34)
-    }
+    let quietBars = waveform.update(with: quiet)
+    let speechBars = waveform.update(with: speech)
 
-    var speechOutput: Float = 0
-    for _ in 0..<5 {
-        speechOutput = leveler.push(inputLevel: 0.56)
-    }
-
-    #expect(noiseOutput < 0.08)
-    #expect(speechOutput > noiseOutput + 0.18)
-}
-
-@Test
-func adaptiveWaveformLevelerKeepsQuietSpeechVisible() {
-    var leveler = AdaptiveWaveformLeveler()
-
-    for _ in 0..<18 {
-        _ = leveler.push(inputLevel: 0.07)
-    }
-
-    var quietSpeechOutput: Float = 0
-    for _ in 0..<6 {
-        quietSpeechOutput = leveler.push(inputLevel: 0.13)
-    }
-
-    #expect(quietSpeechOutput > 0.16)
+    #expect(quietBars.allSatisfy { $0 <= LiveSpeechWaveform.idleLevel + 0.01 })
+    #expect(speechBars.max()! > 0.55)
+    #expect(Set(speechBars.map { Int($0 * 100) }).count > 5)
 }
 
 private final class MockCoordinator: DictationSessionCoordinating {
