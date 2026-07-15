@@ -36,30 +36,33 @@ public struct HistoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(screenBackground)
         .confirmationDialog(
-            "Delete this dictation?",
+            L10n.text("Delete this dictation?", "Удалить эту диктовку?"),
             isPresented: Binding(
                 get: { entryPendingDeletion != nil },
                 set: { if !$0 { entryPendingDeletion = nil } }
             )
         ) {
-            Button("Delete transcript and recording", role: .destructive) {
+            Button(L10n.text("Delete text and recording", "Удалить текст и запись"), role: .destructive) {
                 if let entryPendingDeletion {
                     viewModel.delete(entryPendingDeletion)
                 }
                 entryPendingDeletion = nil
             }
-            Button("Cancel", role: .cancel) {
+            Button(L10n.text("Cancel", "Отмена"), role: .cancel) {
                 entryPendingDeletion = nil
             }
         } message: {
-            Text("This permanently removes the transcript and any retained audio from this Mac.")
+            Text(L10n.text(
+                "This permanently removes the recognized text and any retained audio from this Mac.",
+                "Распознанный текст и сохранённая аудиозапись будут навсегда удалены с этого Mac."
+            ))
         }
     }
 
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("History")
+                Text(L10n.text("History", "История"))
                     .font(.system(size: 23, weight: .semibold, design: .rounded))
 
                 if !viewModel.entries.isEmpty {
@@ -71,7 +74,7 @@ public struct HistoryView: View {
 
             Spacer()
 
-            Button("Refresh") {
+            Button(L10n.text("Refresh", "Обновить")) {
                 Task { @MainActor in
                     await viewModel.reload()
                 }
@@ -82,7 +85,7 @@ public struct HistoryView: View {
     private var loadingState: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("Loading saved dictations...")
+            Text(L10n.text("Loading saved dictations…", "Загружаем сохранённые диктовки…"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -96,10 +99,13 @@ public struct HistoryView: View {
                 .font(.system(size: 28, weight: .regular))
                 .foregroundStyle(.secondary)
 
-            Text("No history yet")
+            Text(L10n.text("No history yet", "История пока пуста"))
                 .font(.headline)
 
-            Text("Dictations will appear here after you speak and stop the hotkey.")
+            Text(L10n.text(
+                "Dictations will appear here after you speak and release the hotkey.",
+                "Диктовки появятся здесь после того, как вы закончите говорить и отпустите клавишу."
+            ))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -150,7 +156,12 @@ public struct HistoryView: View {
                     Button {
                         viewModel.togglePlayback(for: entry)
                     } label: {
-                        Label(viewModel.playingEntryID == entry.id ? "Stop" : "Play", systemImage: viewModel.playingEntryID == entry.id ? "stop.fill" : "play.fill")
+                        Label(
+                            viewModel.playingEntryID == entry.id
+                                ? L10n.text("Stop", "Остановить")
+                                : L10n.text("Play", "Воспроизвести"),
+                            systemImage: viewModel.playingEntryID == entry.id ? "stop.fill" : "play.fill"
+                        )
                     }
                     .disabled(!entry.isRetryable || viewModel.actionEntryID == entry.id)
                 }
@@ -159,7 +170,7 @@ public struct HistoryView: View {
                     Button {
                         viewModel.retry(entry)
                     } label: {
-                        Label("Retry", systemImage: "arrow.clockwise")
+                        Label(L10n.text("Retry", "Повторить"), systemImage: "arrow.clockwise")
                     }
                     .disabled(viewModel.actionEntryID == entry.id)
                 }
@@ -167,14 +178,14 @@ public struct HistoryView: View {
                 Button {
                     viewModel.copyTranscript(for: entry)
                 } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
+                    Label(L10n.text("Copy", "Копировать"), systemImage: "doc.on.doc")
                 }
                 .disabled(transcript.isEmpty)
 
                 Button(role: .destructive) {
                     entryPendingDeletion = entry
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label(L10n.text("Delete", "Удалить"), systemImage: "trash")
                 }
                 .disabled(viewModel.actionEntryID == entry.id)
 
@@ -218,7 +229,7 @@ public struct HistoryView: View {
 
     private func metaText(for entry: DictationHistoryEntry) -> String {
         let duration = formattedDuration(entry.duration)
-        let wordLabel = entry.wordCount == 1 ? "word" : "words"
+        let wordLabel = L10n.count(entry.wordCount, one: L10n.text("word", "слово"), few: "слова", many: L10n.text("words", "слов"))
         let status = statusLabel(for: entry.status)
         var parts = ["\(duration)", "\(entry.wordCount) \(wordLabel)", status]
         if let backend = entry.transcriptionBackend {
@@ -228,29 +239,29 @@ public struct HistoryView: View {
             parts.append(String(format: "%.1fs", transcriptionDuration))
         }
         if entry.audioArtifactPath != nil {
-            parts.append(entry.isRetryable ? "Audio saved" : "Audio missing")
+            parts.append(entry.isRetryable ? L10n.text("Audio saved", "Аудио сохранено") : L10n.text("Audio missing", "Аудио недоступно"))
         }
         if entry.retryCount > 0 {
-            parts.append("Retried \(entry.retryCount)×")
+            parts.append("\(L10n.text("Retried", "Повторов")) \(entry.retryCount)×")
         }
         return parts.joined(separator: " • ")
     }
 
     private var historySummary: String {
         let audioCount = viewModel.entries.filter(\.isRetryable).count
-        let entryLabel = viewModel.entries.count == 1 ? "dictation" : "dictations"
-        let audioLabel = audioCount == 1 ? "recording available" : "recordings available"
+        let entryLabel = L10n.count(viewModel.entries.count, one: L10n.text("dictation", "диктовка"), few: "диктовки", many: L10n.text("dictations", "диктовок"))
+        let audioLabel = L10n.count(audioCount, one: L10n.text("recording available", "запись доступна"), few: "записи доступны", many: L10n.text("recordings available", "записей доступно"))
         return "\(viewModel.entries.count) \(entryLabel) • \(audioCount) \(audioLabel)"
     }
 
     private func backendLabel(for backend: TranscriptionBackend) -> String {
         switch backend {
         case .cloud:
-            return "Cloud"
+            return L10n.text("Cloud", "Облако")
         case .local:
-            return "Local"
+            return L10n.text("Local", "Локально")
         case .cloudWithLocalFallback:
-            return "Cloud → Local"
+            return L10n.text("Cloud → Local", "Облако → локально")
         }
     }
 
@@ -259,21 +270,23 @@ public struct HistoryView: View {
             return detail
         }
 
-        return entry.status == .failed ? "Transcription failed." : "No transcript captured."
+        return entry.status == .failed
+            ? L10n.text("Recognition failed.", "Не удалось распознать речь.")
+            : L10n.text("No text was recognized.", "Текст не распознан.")
     }
 
     private func statusLabel(for status: DictationHistoryStatus) -> String {
         switch status {
         case .inserted:
-            return "Inserted"
+            return L10n.text("Inserted", "Вставлено")
         case .clipboardFallback:
-            return "Clipboard fallback"
+            return L10n.text("Clipboard fallback", "Через буфер обмена")
         case .savedWithoutInsertion:
-            return "Saved"
+            return L10n.text("Saved", "Сохранено")
         case .emptyTranscript:
-            return "Empty transcript"
+            return L10n.text("Empty text", "Пустой текст")
         case .failed:
-            return "Failed"
+            return L10n.text("Failed", "Ошибка")
         }
     }
 

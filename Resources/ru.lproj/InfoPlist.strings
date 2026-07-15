@@ -1,0 +1,3 @@
+"CFBundleName" = "Диктатор";
+"CFBundleDisplayName" = "Диктатор";
+"NSMicrophoneUsageDescription" = "Диктатор использует микрофон для локального распознавания речи.";

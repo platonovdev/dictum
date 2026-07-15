@@ -20,7 +20,7 @@ public final class SettingsWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Dictum Settings"
+        window.title = L10n.text("Dictator Settings", "Настройки — Диктатор")
         window.isReleasedWhenClosed = false
         window.center()
         window.contentView = NSHostingView(rootView: rootView)

@@ -30,10 +30,13 @@ public struct StatisticsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("Statistics")
+            Text(L10n.text("Statistics", "Статистика"))
                 .font(.system(size: 23, weight: .semibold, design: .rounded))
 
-            Text("Calculated from successful dictations only so the numbers stay stable across relaunches.")
+            Text(L10n.text(
+                "Calculated from successful dictations only so the numbers stay stable across relaunches.",
+                "Рассчитывается только по успешным диктовкам, чтобы показатели сохранялись между запусками."
+            ))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -42,7 +45,7 @@ public struct StatisticsView: View {
     private var loadingState: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("Calculating totals...")
+            Text(L10n.text("Calculating totals…", "Считаем статистику…"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -53,15 +56,15 @@ public struct StatisticsView: View {
     private var metricsGrid: some View {
         HStack(spacing: 10) {
             metricCard(
-                title: "Total dictated time",
+                title: L10n.text("Total dictated time", "Общее время диктовки"),
                 value: formattedDuration(viewModel.totalDuration),
-                detail: "\(viewModel.entryCount) successful sessions"
+                detail: "\(viewModel.entryCount) \(L10n.count(viewModel.entryCount, one: L10n.text("successful session", "успешная сессия"), few: "успешные сессии", many: L10n.text("successful sessions", "успешных сессий")))"
             )
 
             metricCard(
-                title: "Total words",
+                title: L10n.text("Total words", "Всего слов"),
                 value: "\(viewModel.totalWords)",
-                detail: "Words captured from saved dictations"
+                detail: L10n.text("Words captured from saved dictations", "Слова из сохранённых диктовок")
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -77,7 +80,7 @@ public struct StatisticsView: View {
 
             Spacer()
 
-            Button("Refresh") {
+            Button(L10n.text("Refresh", "Обновить")) {
                 Task { @MainActor in
                     await viewModel.reload()
                 }
@@ -88,9 +91,9 @@ public struct StatisticsView: View {
     private var wordsChart: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Words per day")
+                Text(L10n.text("Words per day", "Слов в день"))
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
-                Text("Last 30 days")
+                Text(L10n.text("Last 30 days", "Последние 30 дней"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

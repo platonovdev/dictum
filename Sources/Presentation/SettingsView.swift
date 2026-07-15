@@ -14,165 +14,117 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 12, alignment: .top),
-                    GridItem(.flexible(), spacing: 12, alignment: .top)
-                ],
-                alignment: .leading,
-                spacing: 12
-            ) {
-                recordingSection
-                recognitionSection
-                modelSection
-                privacySection
-                permissionsSection
-                    .gridCellColumns(2)
-            }
-            footer
-        }
-        .controlSize(.small)
-        .padding(20)
-        .frame(maxWidth: 760, alignment: .leading)
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Settings")
-                .font(.system(size: 23, weight: .semibold, design: .rounded))
-            Text("Local dictation, shortcuts, history and privacy.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var recordingSection: some View {
-        SettingsCard(title: "Recording", subtitle: "Start speaking from any app") {
-            Picker("Shortcut", selection: $settingsViewModel.settings.hotkey.kind) {
-                ForEach(HotkeyKind.allCases, id: \.self) { kind in
-                    Text(kind.displayName).tag(kind)
-                }
-            }
-            .pickerStyle(.menu)
-
-            Toggle("Paste the result at the cursor", isOn: $settingsViewModel.settings.autoPaste)
-            Toggle("Add a space after each dictation", isOn: $settingsViewModel.settings.appendTrailingSpace)
-            Toggle("Show the floating recording indicator", isOn: $settingsViewModel.settings.showOverlay)
-            Toggle("Launch Dictum when you log in", isOn: $settingsViewModel.settings.launchAtLogin)
-        }
-    }
-
-    private var modelSection: some View {
-        SettingsCard(title: "Local model", subtitle: "Private and offline after download") {
-            if let option = TranscriptionModelOption.all.first {
-                HStack(spacing: 10) {
-                    Image(systemName: "bolt.horizontal.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(Color.accentColor)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(option.title)
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Metal accelerated • \(option.downloadSize)")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 24) {
+            settingsHeader
+            Form {
+                Section(L10n.text("Dictation", "Диктовка")) {
+                    Picker(L10n.text("Shortcut", "Сочетание клавиш"), selection: $settingsViewModel.settings.hotkey.kind) {
+                        ForEach(HotkeyKind.allCases, id: \.self) { kind in
+                            Text(hotkeyTitle(kind)).tag(kind)
+                        }
                     }
-                    Spacer()
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    Toggle(L10n.text("Paste recognized text at cursor", "Вставлять распознанный текст в позицию курсора"), isOn: $settingsViewModel.settings.autoPaste)
+                    Toggle(L10n.text("Add a space after each dictation", "Добавлять пробел после каждой диктовки"), isOn: $settingsViewModel.settings.appendTrailingSpace)
+                    Toggle(L10n.text("Show floating recording indicator", "Показывать плавающий индикатор записи"), isOn: $settingsViewModel.settings.showOverlay)
+                    Toggle(L10n.text("Launch Dictator at login", "Запускать Диктатор при входе в систему"), isOn: $settingsViewModel.settings.launchAtLogin)
                 }
-            }
 
-            Divider()
-
-            Picker("Memory", selection: $settingsViewModel.settings.modelMemoryPolicy) {
-                ForEach(ModelMemoryPolicy.allCases, id: \.self) { policy in
-                    Text(policy.displayName).tag(policy)
+                Section(L10n.text("Recognition", "Распознавание")) {
+                    Picker(L10n.text("Spoken language", "Язык речи"), selection: $settingsViewModel.settings.language) {
+                        ForEach(DictationLanguage.allCases, id: \.self) { language in
+                            Text(languageTitle(language)).tag(language)
+                        }
+                    }
+                    Toggle(L10n.text("Translate to English", "Переводить на английский"), isOn: $settingsViewModel.settings.translateToEnglish)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.text("Custom words", "Пользовательские слова"))
+                        TextEditor(text: customWordsText)
+                            .font(.system(size: 12))
+                            .frame(minHeight: 72)
+                            .padding(5)
+                            .background(Color(nsColor: .textBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-        }
-    }
 
-    private var recognitionSection: some View {
-        SettingsCard(title: "Recognition", subtitle: "Improve accuracy for the way you speak") {
-            Picker("Spoken language", selection: $settingsViewModel.settings.language) {
-                ForEach(DictationLanguage.allCases, id: \.self) { language in
-                    Text(language.displayName).tag(language)
+                Section(L10n.text("Local model", "Локальная модель")) {
+                    if let option = TranscriptionModelOption.all.first {
+                        LabeledContent(L10n.text("Installed model", "Установленная модель")) {
+                            Label(option.title, systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                        LabeledContent(L10n.text("Performance", "Производительность")) {
+                            Text("\(L10n.text("Metal accelerated", "Ускорение Metal")) • \(option.downloadSize)")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Picker(L10n.text("Memory", "Память"), selection: $settingsViewModel.settings.modelMemoryPolicy) {
+                        ForEach(ModelMemoryPolicy.allCases, id: \.self) { policy in
+                            Text(memoryPolicyTitle(policy)).tag(policy)
+                        }
+                    }
                 }
-            }
-            .pickerStyle(.menu)
 
-            Toggle("Translate to English", isOn: $settingsViewModel.settings.translateToEnglish)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Custom words")
-                    .font(.system(size: 13, weight: .medium))
-                TextEditor(text: customWordsText)
-                    .font(.system(size: 12))
-                    .frame(minHeight: 48)
-                    .padding(5)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color(nsColor: .textBackgroundColor)))
-            }
-        }
-    }
-
-    private var privacySection: some View {
-        SettingsCard(title: "History & privacy", subtitle: "Transcripts stay on this Mac") {
-            Picker("Keep recordings", selection: $settingsViewModel.settings.audioRetention) {
-                ForEach(AudioRetentionPolicy.allCases, id: \.self) { policy in
-                    Text(policy.displayName).tag(policy)
-                }
-            }
-            .pickerStyle(.menu)
-            Text("Failed recordings stay available for retry until deleted.")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-
-            Stepper(
-                value: $settingsViewModel.settings.historyLimit,
-                in: 10...2_000,
-                step: 10
-            ) {
-                HStack {
-                    Text("History limit")
-                    Spacer()
-                    Text("\(settingsViewModel.settings.historyLimit) dictations")
+                Section(L10n.text("History & privacy", "История и конфиденциальность")) {
+                    Picker(L10n.text("Keep recordings", "Хранить записи"), selection: $settingsViewModel.settings.audioRetention) {
+                        ForEach(AudioRetentionPolicy.allCases, id: \.self) { policy in
+                            Text(retentionTitle(policy)).tag(policy)
+                        }
+                    }
+                    Stepper(value: $settingsViewModel.settings.historyLimit, in: 10...2_000, step: 10) {
+                        LabeledContent(L10n.text("History limit", "Лимит истории")) {
+                            Text("\(settingsViewModel.settings.historyLimit) \(L10n.text("dictations", "записей"))")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(L10n.text(
+                        "Recognized text stays on this Mac. Failed recordings remain available for retry until deleted.",
+                        "Распознанный текст хранится на этом Mac. Неудачные записи доступны для повторной обработки до удаления."
+                    ))
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-            }
-            .font(.system(size: 13))
-        }
-    }
 
-    private var permissionsSection: some View {
-        SettingsCard(title: "Permissions", subtitle: "Needed to listen and write in other apps") {
-            permissionRow(title: "Microphone", status: permissionsViewModel.snapshot.microphone, permission: .microphone)
-            permissionRow(title: "Accessibility", status: permissionsViewModel.snapshot.accessibility, permission: .accessibility)
-            permissionRow(title: "Input Monitoring", status: permissionsViewModel.snapshot.inputMonitoring, permission: .inputMonitoring)
+                Section(L10n.text("Permissions", "Разрешения")) {
+                    permissionRow(title: L10n.text("Microphone", "Микрофон"), status: permissionsViewModel.snapshot.microphone, permission: .microphone)
+                    permissionRow(title: L10n.text("Accessibility", "Универсальный доступ"), status: permissionsViewModel.snapshot.accessibility, permission: .accessibility)
+                    permissionRow(title: L10n.text("Input Monitoring", "Мониторинг ввода"), status: permissionsViewModel.snapshot.inputMonitoring, permission: .inputMonitoring)
+                    HStack {
+                        Button(L10n.text("Request Missing Permissions", "Запросить недостающие разрешения")) { permissionsViewModel.requestPermissions() }
+                        Button(L10n.text("Refresh", "Обновить")) { permissionsViewModel.refresh() }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+
             HStack {
-                Button("Request missing permissions") { permissionsViewModel.requestPermissions() }
-                Button("Refresh") { permissionsViewModel.refresh() }
-                    .buttonStyle(.link)
+                if let message = settingsViewModel.errorMessage ?? settingsViewModel.launchAtLoginNotice {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(L10n.text("Save Changes", "Сохранить изменения")) { settingsViewModel.save() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(settingsViewModel.isSaving)
             }
         }
+        .controlSize(.regular)
+        .padding(24)
     }
 
-    private var footer: some View {
-        HStack(spacing: 12) {
-            if let message = settingsViewModel.errorMessage ?? settingsViewModel.launchAtLoginNotice {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Save changes") { settingsViewModel.save() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(settingsViewModel.isSaving)
+    private var settingsHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.text("Dictation settings", "Настройки диктовки"))
+                .font(.title2.weight(.semibold))
+            Text(L10n.text(
+                "Control how Dictator listens, recognizes, and inserts text.",
+                "Настройте, как Диктатор слушает, распознаёт и вставляет текст."
+            ))
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
-        .padding(.top, 2)
     }
 
     private var customWordsText: Binding<String> {
@@ -188,46 +140,60 @@ public struct SettingsView: View {
     }
 
     private func permissionRow(title: String, status: PermissionStatus, permission: PermissionKind) -> some View {
-        HStack {
-            Circle()
-                .fill(status == .authorized ? Color.green : Color.orange)
-                .frame(width: 7, height: 7)
-            Text(title)
-            Spacer()
-            Text(status == .authorized ? "Ready" : status.rawValue.capitalized)
-                .foregroundStyle(.secondary)
-            Button("Open") { permissionsViewModel.openSystemSettings(for: permission) }
-                .buttonStyle(.link)
+        LabeledContent(title) {
+            HStack(spacing: 8) {
+                Label(permissionStatusTitle(status),
+                      systemImage: status == .authorized ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundStyle(status == .authorized ? .green : .orange)
+                Button(L10n.text("Open…", "Открыть…")) { permissionsViewModel.openSystemSettings(for: permission) }
+            }
         }
-        .font(.system(size: 13))
     }
 
-}
-
-private struct SettingsCard<Content: View>: View {
-    let title: String
-    let subtitle: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                Text(subtitle)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
-            }
-            content
+    private func hotkeyTitle(_ kind: HotkeyKind) -> String {
+        switch kind {
+        case .rightCommandHold:
+            return L10n.text("Hold Right Command", "Удерживать правый Command")
+        case .optionSpaceHold:
+            return L10n.text("Hold Option + Space", "Удерживать Option + Пробел")
         }
-        .padding(14)
-        .background {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.78))
+    }
+
+    private func languageTitle(_ language: DictationLanguage) -> String {
+        switch language {
+        case .automatic: return L10n.text("Automatic", "Автоматически")
+        case .russian: return L10n.text("Russian", "Русский")
+        case .english: return L10n.text("English", "Английский")
+        case .ukrainian: return L10n.text("Ukrainian", "Украинский")
+        case .german: return L10n.text("German", "Немецкий")
+        case .spanish: return L10n.text("Spanish", "Испанский")
+        case .french: return L10n.text("French", "Французский")
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.32), lineWidth: 1)
+    }
+
+    private func memoryPolicyTitle(_ policy: ModelMemoryPolicy) -> String {
+        switch policy {
+        case .keepLoaded: return L10n.text("Keep model ready", "Держать модель готовой")
+        case .unloadAfterFiveMinutes: return L10n.text("Release after 5 minutes", "Освобождать через 5 минут")
+        case .unloadAfterFifteenMinutes: return L10n.text("Release after 15 minutes", "Освобождать через 15 минут")
+        case .unloadImmediately: return L10n.text("Release after every dictation", "Освобождать после каждой диктовки")
+        }
+    }
+
+    private func retentionTitle(_ policy: AudioRetentionPolicy) -> String {
+        switch policy {
+        case .none: return L10n.text("Don't keep recordings", "Не хранить записи")
+        case .oneDay: return L10n.text("Keep for 1 day", "Хранить 1 день")
+        case .sevenDays: return L10n.text("Keep for 7 days", "Хранить 7 дней")
+        case .forever: return L10n.text("Keep until deleted", "Хранить до удаления")
+        }
+    }
+
+    private func permissionStatusTitle(_ status: PermissionStatus) -> String {
+        switch status {
+        case .authorized: return L10n.text("Ready", "Готово")
+        case .denied: return L10n.text("Denied", "Запрещено")
+        case .notDetermined: return L10n.text("Not requested", "Не запрошено")
         }
     }
 }

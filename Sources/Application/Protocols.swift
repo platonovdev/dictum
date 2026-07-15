@@ -24,12 +24,26 @@ public protocol ConfigurableLocalTranscriptionEngine: SpeechTranscriptionEngine 
     )
 }
 
+/// Engines backed by an isolated worker can abort a wedged native decode
+/// without taking the host app down with it.
+@MainActor
+public protocol CancellableSpeechTranscriptionEngine: SpeechTranscriptionEngine {
+    func cancelCurrentTranscription() async
+}
+
 @MainActor
 public protocol AudioCaptureService {
     func makeMeterStream() -> AsyncStream<AudioMeterFrame>
     func startRecording() async throws
     func stopRecording() async throws -> CapturedAudio
     func cancelRecording() async
+    /// Returns complete recordings left behind by an interrupted app process.
+    /// Implementations that only keep ephemeral audio can use the default.
+    func recoverPendingRecordings() async -> [CapturedAudio]
+}
+
+public extension AudioCaptureService {
+    func recoverPendingRecordings() async -> [CapturedAudio] { [] }
 }
 
 @MainActor

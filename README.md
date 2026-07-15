@@ -1,14 +1,15 @@
-# Dictum
+# Dictator
 
-`Dictum` is a native macOS dictation utility for Apple Silicon. Hold a global hotkey, speak, release the key, and the app transcribes locally with Whisper and pastes the result into the active text field.
+`Dictator` is a native macOS dictation utility for Apple Silicon. Hold a global hotkey, speak, release the key, and the app transcribes locally with Whisper and pastes the result into the active text field.
 
-## Current status
-
-This repository contains the initial implementation of the architecture and app shell:
+## Architecture
 
 - native menu bar application built with `SwiftUI + AppKit`
 - layered modules: `Domain`, `Application`, `Infrastructure`, `Presentation`
-- local speech-to-text adapter wired for `WhisperKit`
+- local `whisper.cpp` Turbo recognition with Metal acceleration
+- isolated `DictatorTranscriber` worker: a native decoder crash or hang cannot take down the UI process
+- finalized WAV validation and recovery of recordings interrupted by an app or system restart
+- transactional SQLite history with WAL recovery and one-time migration from the legacy `UserDefaults` history
 - hold-to-talk hotkey flow for `Right Command`
 - overlay UI, permissions flow, accessibility insertion, clipboard fallback
 - install and uninstall scripts for local Git-based usage
@@ -22,7 +23,6 @@ The project is intentionally open-source friendly and unsandboxed for v1 so it c
 - macOS 14+
 - Command Line Tools for terminal builds
 - full Xcode 15+ recommended for IDE work and debugging
-- Command Line Tools
 - microphone access
 - accessibility access
 - input monitoring access
@@ -44,7 +44,7 @@ cd dictum
 ./Scripts/install.sh
 ```
 
-4. Launch `Dictum.app`.
+4. Launch `Dictator.app`.
 5. Open Settings from the menu bar and grant permissions.
 6. Focus any normal text field, hold `Right Command`, speak, then release it to insert the transcript.
 
@@ -60,7 +60,7 @@ Or build from the terminal:
 
 ```bash
 swift build
-swift test
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --enable-swift-testing --no-parallel
 ```
 
 For fast local UX iteration, use:
@@ -98,8 +98,8 @@ If this command prints `0 valid identities found`, the script will fall back to 
 
 If signing fails and macOS shows a keychain access prompt, choose `Always Allow`, then run the install again.
 
-## Known limitations in this initial version
+## Known limitations
 
 - The `Right Command` single-modifier hotkey works through event monitoring, but some apps or system states can still require the fallback hotkey.
-- The Whisper adapter is designed for `WhisperKit`; if WhisperKit changes its API, the adapter may need a small update.
+- The local Turbo model is downloaded on first use and requires about 1.6 GB of disk space.
 - The app bundle is produced by the install script; notarization and signed DMG distribution are not included yet.

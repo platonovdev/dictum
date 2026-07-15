@@ -1,5 +1,4 @@
 import AVFoundation
-import Accelerate
 import Application
 import Domain
 import Foundation
@@ -8,11 +7,19 @@ import Foundation
 public final class AVAudioCaptureService: AudioCaptureService {
     private let audioEngine = AVAudioEngine()
     private let tapSink = TapSink()
+    private let fileManager: FileManager
+    private let pendingDirectoryURL: URL
 
     private var outputURL: URL?
-    private var startedAt: Date?
 
-    public init() {}
+    public init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+        let applicationSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        pendingDirectoryURL = applicationSupportURL
+            .appendingPathComponent("Dictator", isDirectory: true)
+            .appendingPathComponent("PendingRecordings", isDirectory: true)
+    }
 
     public func makeMeterStream() -> AsyncStream<AudioMeterFrame> {
         tapSink.makeMeterStream()
@@ -20,19 +27,26 @@ public final class AVAudioCaptureService: AudioCaptureService {
 
     public func startRecording() async throws {
         guard !audioEngine.isRunning else {
-            return
+            throw AppError.audioCaptureFailed("A recording session is already active.")
         }
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OneBtnVoice-\(UUID().uuidString)")
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw AppError.audioCaptureFailed("The selected microphone has no usable input format.")
+        }
+        try fileManager.createDirectory(
+            at: pendingDirectoryURL,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        let url = pendingDirectoryURL
+            .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("wav")
 
         let outputFile = try AVAudioFile(forWriting: url, settings: format.settings)
         outputURL = url
-        startedAt = Date()
-        tapSink.configure(outputFile: outputFile)
+        tapSink.configure(outputFile: outputFile, sampleRate: format.sampleRate)
 
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(
@@ -42,49 +56,117 @@ public final class AVAudioCaptureService: AudioCaptureService {
             block: tapSink.makeTapHandler()
         )
 
-        audioEngine.prepare()
-        try audioEngine.start()
+        do {
+            audioEngine.prepare()
+            try audioEngine.start()
+        } catch {
+            inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+            _ = tapSink.finish()
+            outputURL = nil
+            try? fileManager.removeItem(at: url)
+            throw AppError.audioCaptureFailed(error.localizedDescription)
+        }
     }
 
     public func stopRecording() async throws -> CapturedAudio {
-        guard audioEngine.isRunning, let outputURL else {
+        guard let outputURL else {
             throw AppError.audioCaptureFailed("No active recording session.")
         }
 
         audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
 
-        let duration = Date().timeIntervalSince(startedAt ?? Date())
+        // `removeTap` prevents new callbacks; `finish` then waits on the same
+        // lock used for every file write. This makes the last microphone buffer
+        // part of the recording before AVAudioFile is closed and validated.
+        let result = tapSink.finish()
+        self.outputURL = nil
 
-        tapSink.clear()
+        if let writeError = result.writeError {
+            throw AppError.audioCaptureFailed("The recording could not be written: \(writeError.localizedDescription)")
+        }
 
-        startedAt = nil
-        return CapturedAudio(fileURL: outputURL, duration: duration)
+        do {
+            let file = try AVAudioFile(forReading: outputURL)
+            let actualFrames = file.length
+            guard actualFrames > 0 else {
+                throw AppError.audioCaptureFailed("The recording contains no audio frames.")
+            }
+
+            let allowedFrameDifference = max(1, AVAudioFramePosition(result.writtenFrames / 1_000))
+            guard abs(actualFrames - AVAudioFramePosition(result.writtenFrames)) <= allowedFrameDifference else {
+                throw AppError.audioCaptureFailed(
+                    "The recording was not finalized completely (expected \(result.writtenFrames) frames, found \(actualFrames))."
+                )
+            }
+
+            // Push the finalized header and samples to disk before the file is
+            // handed to the archive/transcription pipeline.
+            try FileHandle(forUpdating: outputURL).synchronize()
+            let duration = Double(actualFrames) / file.processingFormat.sampleRate
+            return CapturedAudio(fileURL: outputURL, duration: duration)
+        } catch let error as AppError {
+            throw error
+        } catch {
+            throw AppError.audioCaptureFailed("The finalized recording could not be verified: \(error.localizedDescription)")
+        }
     }
 
     public func cancelRecording() async {
-        guard audioEngine.isRunning else {
-            tapSink.clear()
-            outputURL = nil
-            startedAt = nil
-            return
+        if audioEngine.isRunning {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
         }
-
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
-        tapSink.clear()
+        _ = tapSink.finish()
+        if let outputURL {
+            try? fileManager.removeItem(at: outputURL)
+        }
         outputURL = nil
-        startedAt = nil
     }
 
+    public func recoverPendingRecordings() async -> [CapturedAudio] {
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: pendingDirectoryURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return files.compactMap { url in
+            guard url.pathExtension.lowercased() == "wav",
+                  (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                  let file = try? AVAudioFile(forReading: url),
+                  file.length > 0,
+                  file.processingFormat.sampleRate > 0 else {
+                return nil
+            }
+            return CapturedAudio(
+                fileURL: url,
+                duration: Double(file.length) / file.processingFormat.sampleRate
+            )
+        }
+    }
 }
 
 private final class TapSink: @unchecked Sendable {
+    struct FinishResult {
+        let writtenFrames: AVAudioFramePosition
+        let sampleRate: Double
+        let writeError: Error?
+    }
+
     private let lock = NSLock()
     private let meterBroadcast = AsyncBroadcast<AudioMeterFrame>()
     private let meterAnalyzer = AudioMeterAnalyzer()
 
     private var outputFile: AVAudioFile?
+    private var writtenFrames: AVAudioFramePosition = 0
+    private var sampleRate: Double = 0
+    private var writeError: Error?
 
     func makeMeterStream() -> AsyncStream<AudioMeterFrame> {
         // Meter consumers only need the freshest sample. Dropping stale frames
@@ -92,19 +174,31 @@ private final class TapSink: @unchecked Sendable {
         meterBroadcast.stream(bufferingPolicy: .bufferingNewest(1))
     }
 
-    func configure(outputFile: AVAudioFile) {
+    func configure(outputFile: AVAudioFile, sampleRate: Double) {
         lock.lock()
         self.outputFile = outputFile
+        writtenFrames = 0
+        self.sampleRate = sampleRate
+        writeError = nil
+        meterAnalyzer.reset()
         lock.unlock()
     }
 
     func handle(buffer: AVAudioPCMBuffer) {
         lock.lock()
-        let outputFile = self.outputFile
+        guard let outputFile else {
+            lock.unlock()
+            return
+        }
+        do {
+            try outputFile.write(from: buffer)
+            writtenFrames += AVAudioFramePosition(buffer.frameLength)
+        } catch {
+            writeError = writeError ?? error
+        }
+        let meterFrame = meterAnalyzer.analyze(buffer: buffer)
         lock.unlock()
-
-        try? outputFile?.write(from: buffer)
-        meterBroadcast.yield(meterAnalyzer.analyze(buffer: buffer))
+        meterBroadcast.yield(meterFrame)
     }
 
     func makeTapHandler() -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
@@ -113,42 +207,24 @@ private final class TapSink: @unchecked Sendable {
         }
     }
 
-    func clear() {
+    func finish() -> FinishResult {
         lock.lock()
+        let result = FinishResult(
+            writtenFrames: writtenFrames,
+            sampleRate: sampleRate,
+            writeError: writeError
+        )
         outputFile = nil
-        lock.unlock()
         meterAnalyzer.reset()
+        lock.unlock()
+        return result
     }
 }
 
 private final class AudioMeterAnalyzer: @unchecked Sendable {
-    private static let fftSize = 2048
-    private static let fftLog2n = vDSP_Length(11)
-    private static let spectrumBandCount = 15
-
-    private let fftSetup: FFTSetup
-    private var fftWindow = [Float](repeating: 0, count: fftSize)
-    private var fftInput = [Float](repeating: 0, count: fftSize)
-    private var fftReal = [Float](repeating: 0, count: fftSize / 2)
-    private var fftImaginary = [Float](repeating: 0, count: fftSize / 2)
-    private var fftMagnitudes = [Float](repeating: 0, count: fftSize / 2)
-
     private var slowLowPass: Float = 0
     private var fastLowPass: Float = 0
-    private var smoothedBands = Array(repeating: Float(0), count: spectrumBandCount)
     private var speechDetector = RealtimeSpeechActivityDetector()
-
-    init() {
-        guard let fftSetup = vDSP_create_fftsetup(Self.fftLog2n, FFTRadix(kFFTRadix2)) else {
-            fatalError("Could not create the audio spectrum FFT setup.")
-        }
-        self.fftSetup = fftSetup
-        vDSP_hann_window(&fftWindow, vDSP_Length(Self.fftSize), Int32(vDSP_HANN_NORM))
-    }
-
-    deinit {
-        vDSP_destroy_fftsetup(fftSetup)
-    }
 
     func analyze(buffer: AVAudioPCMBuffer) -> AudioMeterFrame {
         guard let channelData = buffer.floatChannelData else {
@@ -202,92 +278,25 @@ private final class AudioMeterAnalyzer: @unchecked Sendable {
             frameDuration: Float(frameDuration)
         )
         let visualLevel = normalizedVisualLevel(rms: overallRMS, peak: overallPeak)
-        let bands = spectrumBands(
-            channel: channel,
-            frameLength: frameLength,
-            sampleRate: buffer.format.sampleRate
-        )
-
+        let visualBands = [lowDB, midDB, highDB].map { decibels in
+            pow(normalizedDecibel(db: decibels, floor: -72, ceiling: -18), 0.82)
+        }
         return AudioMeterFrame(
             overallLevel: overallLevel,
             visualLevel: visualLevel,
             speechConfidence: speechDecision.confidence,
             isSpeechDetected: speechDecision.isSpeechDetected,
             frameDuration: frameDuration,
-            bands: bands
+            // Three IIR-derived ranges keep the stationary meter expressive
+            // without bringing back the significantly heavier FFT path.
+            bands: visualBands
         )
     }
 
     func reset() {
         slowLowPass = 0
         fastLowPass = 0
-        smoothedBands = Array(repeating: 0, count: Self.spectrumBandCount)
         speechDetector.reset()
-    }
-
-    private func spectrumBands(
-        channel: UnsafePointer<Float>,
-        frameLength: Int,
-        sampleRate: Double
-    ) -> [Float] {
-        let availableSamples = min(frameLength, Self.fftSize)
-        let sourceOffset = max(frameLength - availableSamples, 0)
-        fftWindow.withUnsafeBufferPointer { window in
-            fftInput.withUnsafeMutableBufferPointer { destination in
-                destination.initialize(repeating: 0)
-                vDSP_vmul(
-                    channel.advanced(by: sourceOffset),
-                    1,
-                    window.baseAddress!.advanced(by: Self.fftSize - availableSamples),
-                    1,
-                    destination.baseAddress!.advanced(by: Self.fftSize - availableSamples),
-                    1,
-                    vDSP_Length(availableSamples)
-                )
-            }
-        }
-
-        fftInput.withUnsafeBufferPointer { input in
-            fftReal.withUnsafeMutableBufferPointer { real in
-                fftImaginary.withUnsafeMutableBufferPointer { imaginary in
-                    var splitComplex = DSPSplitComplex(
-                        realp: real.baseAddress!,
-                        imagp: imaginary.baseAddress!
-                    )
-                    input.baseAddress!.withMemoryRebound(
-                        to: DSPComplex.self,
-                        capacity: Self.fftSize / 2
-                    ) { complexInput in
-                        vDSP_ctoz(complexInput, 2, &splitComplex, 1, vDSP_Length(Self.fftSize / 2))
-                    }
-                    vDSP_fft_zrip(fftSetup, &splitComplex, 1, Self.fftLog2n, FFTDirection(FFT_FORWARD))
-                    vDSP_zvmags(&splitComplex, 1, &fftMagnitudes, 1, vDSP_Length(Self.fftSize / 2))
-                }
-            }
-        }
-
-        let minimumFrequency: Float = 70
-        let maximumFrequency = min(Float(sampleRate / 2) * 0.92, 8_000)
-        let ratio = maximumFrequency / minimumFrequency
-        let frequencyPerBin = Float(sampleRate) / Float(Self.fftSize)
-        var result = [Float]()
-        result.reserveCapacity(Self.spectrumBandCount)
-
-        for index in 0..<Self.spectrumBandCount {
-            let start = minimumFrequency * pow(ratio, Float(index) / Float(Self.spectrumBandCount))
-            let end = minimumFrequency * pow(ratio, Float(index + 1) / Float(Self.spectrumBandCount))
-            let lowerBin = max(1, Int(start / frequencyPerBin))
-            let upperBin = min(fftMagnitudes.count - 1, max(lowerBin, Int(end / frequencyPerBin)))
-            let peakPower = fftMagnitudes[lowerBin...upperBin].max() ?? 0
-            let decibels = 10 * log10(max(peakPower, 0.000_000_000_001))
-            let normalized = min(max((decibels + 86) / 58, 0), 1)
-            let target = pow(normalized, 0.72)
-            let smoothing: Float = target > smoothedBands[index] ? 0.82 : 0.22
-            smoothedBands[index] += (target - smoothedBands[index]) * smoothing
-            result.append(smoothedBands[index])
-        }
-
-        return result
     }
 
     private func normalizedLevel(energy: Float, frameLength: Int, gain: Float) -> Float {

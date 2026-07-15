@@ -63,6 +63,35 @@ func startDictationRecordsImmediatelyWhileAnUnloadedModelWarmsInBackground() asy
 
 @Test
 @MainActor
+func launchPreparationAndImmediateRecordingShareOneModelWarmup() async {
+    let engine = DelayedPreparationSpeechEngine(delay: .milliseconds(120))
+    let coordinator = DictationSessionCoordinator(
+        transcriptionEngine: engine,
+        audioCaptureService: MockAudioCaptureService(),
+        insertionService: MockInsertionService(),
+        permissionService: MockPermissionService(
+            snapshot: PermissionSnapshot(
+                microphone: .authorized,
+                accessibility: .authorized,
+                inputMonitoring: .authorized
+            )
+        ),
+        settingsStore: MockSettingsStore(),
+        historyStore: MockHistoryStore()
+    )
+
+    let launchPreparation = Task { @MainActor in
+        await coordinator.prepare()
+    }
+    try? await Task.sleep(for: .milliseconds(10))
+    await coordinator.startDictation()
+    await launchPreparation.value
+
+    #expect(engine.preparationCount == 1)
+}
+
+@Test
+@MainActor
 func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     let insertionService = MockInsertionService()
     let historyStore = MockHistoryStore()
@@ -99,11 +128,11 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
 
 @Test
 @MainActor
-func stopDictationTreatsNoiseOnlyAsEmptyTranscript() async {
+func stopDictationDoesNotDiscardAudioBecauseAdvisoryMeterMissedSpeech() async {
     let insertionService = MockInsertionService()
     let historyStore = MockHistoryStore()
     let coordinator = DictationSessionCoordinator(
-        transcriptionEngine: MockSpeechEngine(finalText: "hallucinated"),
+        transcriptionEngine: MockSpeechEngine(finalText: "quiet speech"),
         audioCaptureService: MockAudioCaptureService(meterFrames: [
             AudioMeterFrame(
                 overallLevel: 0.55,
@@ -147,9 +176,9 @@ func stopDictationTreatsNoiseOnlyAsEmptyTranscript() async {
     await coordinator.stopDictation()
 
     let entries = await historyStore.entries
-    #expect(await insertionService.insertedText == nil)
+    #expect(await insertionService.insertedText == "quiet speech ")
     #expect(entries.count == 1)
-    #expect(entries.first?.status == .emptyTranscript)
+    #expect(entries.first?.status == .inserted)
 }
 
 @Test
@@ -205,8 +234,18 @@ func holdToTalkStillStopsOnRelease() async {
     try? await Task.sleep(for: .milliseconds(300))
     await coordinator.handleHotkeyEvent(.released)
 
-    let transcribingState = await iterator.next()
-    let idleState = await iterator.next()
+    var transcribingState: DictationSessionState?
+    var idleState: DictationSessionState?
+    for _ in 0..<10 {
+        let next = await iterator.next()
+        if transcribingState == nil, isTranscribing(next) {
+            transcribingState = next
+        }
+        if isIdle(next) {
+            idleState = next
+            break
+        }
+    }
 
     #expect(isTranscribing(transcribingState))
     #expect(isIdle(idleState))
@@ -237,8 +276,18 @@ func quickDoublePressEnablesHandsFreeUntilNextPressStopsIt() async {
     #expect(await insertionService.insertedText == nil)
 
     await coordinator.handleHotkeyEvent(.pressed)
-    let transcribingState = await iterator.next()
-    let idleState = await iterator.next()
+    var transcribingState: DictationSessionState?
+    var idleState: DictationSessionState?
+    for _ in 0..<10 {
+        let next = await iterator.next()
+        if transcribingState == nil, isTranscribing(next) {
+            transcribingState = next
+        }
+        if isIdle(next) {
+            idleState = next
+            break
+        }
+    }
 
     #expect(isTranscribing(transcribingState))
     #expect(isIdle(idleState))
@@ -352,13 +401,20 @@ final class MockSpeechEngine: SpeechTranscriptionEngine {
 @MainActor
 private final class DelayedPreparationSpeechEngine: SpeechTranscriptionEngine {
     private(set) var didStartPreparing = false
+    private(set) var preparationCount = 0
+    private let delay: Duration
+
+    init(delay: Duration = .milliseconds(50)) {
+        self.delay = delay
+    }
 
     func prepareModel(
         named modelIdentifier: String,
         progressHandler: @escaping @Sendable (ModelPreparationStatus) -> Void
     ) async throws {
         didStartPreparing = true
-        try? await Task.sleep(for: .milliseconds(50))
+        preparationCount += 1
+        try? await Task.sleep(for: delay)
     }
 
     func unloadModel() async {}

@@ -8,6 +8,7 @@ public final class OverlayWindowController {
     private let viewModel: OverlayViewModel
     private var cancellables: Set<AnyCancellable> = []
     private var isEnabled = true
+    private var lastRecordingWidth = OverlayLayout.initialWidth
 
     public init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
@@ -28,7 +29,9 @@ public final class OverlayWindowController {
         panel.hidesOnDeactivate = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = true
+        // The standard NSPanel shadow is intentionally disabled: it is much
+        // broader than this compact overlay and makes the panel look blurred.
+        panel.hasShadow = false
         panel.worksWhenModal = true
         let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
         hostingView.wantsLayer = true
@@ -36,17 +39,15 @@ public final class OverlayWindowController {
         hostingView.sceneBridgingOptions = []
         panel.contentView = hostingView
 
-        Publishers.CombineLatest3(
+        Publishers.CombineLatest(
             viewModel.$visualState,
-            viewModel.$statusText,
-            viewModel.$isLockedMode
+            viewModel.$statusText
         )
         .debounce(for: .milliseconds(10), scheduler: RunLoop.main)
-        .sink { [weak self] visualState, statusText, isLockedMode in
+        .sink { [weak self] visualState, statusText in
             self?.updatePanelFrame(
                 for: visualState,
                 statusText: statusText,
-                isLockedMode: isLockedMode,
                 animated: self?.panel.isVisible == true
             )
         }
@@ -64,13 +65,28 @@ public final class OverlayWindowController {
         guard isEnabled else {
             return
         }
+        let wasVisible = panel.isVisible
         updatePanelFrame(
             for: viewModel.visualState,
             statusText: viewModel.statusText,
-            isLockedMode: viewModel.isLockedMode,
             animated: false
         )
+        if !wasVisible {
+            panel.alphaValue = 0
+        }
         panel.orderFrontRegardless()
+
+        guard !wasVisible else {
+            panel.alphaValue = 1
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.allowsImplicitAnimation = true
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
     }
 
     public func hide() {
@@ -100,13 +116,11 @@ public final class OverlayWindowController {
     private func updatePanelFrame(
         for visualState: OverlayVisualState,
         statusText: String?,
-        isLockedMode: Bool,
         animated: Bool
     ) {
         let width = preferredWidth(
             for: visualState,
-            statusText: statusText,
-            isLockedMode: isLockedMode
+            statusText: statusText
         )
         guard let frame = targetFrame(width: width), panel.frame != frame else {
             return
@@ -127,24 +141,23 @@ public final class OverlayWindowController {
 
     private func preferredWidth(
         for visualState: OverlayVisualState,
-        statusText: String?,
-        isLockedMode: Bool
+        statusText: String?
     ) -> CGFloat {
-        let horizontalPadding: CGFloat = 24
-        let contentSpacing: CGFloat = 8
+        let horizontalPadding: CGFloat = 20
+        let contentSpacing: CGFloat = 7
 
         switch visualState {
         case .recording:
-            let timerWidth: CGFloat = 38
-            let lockWidth: CGFloat = isLockedMode ? 18 : 0
-            return horizontalPadding
-                + OverlayLayout.waveformWidth
-                + contentSpacing
-                + timerWidth
-                + lockWidth
-        case .processing, .error:
-            let text = statusText ?? "Transcribing..."
-            let font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+            // The lock slot is always reserved by OverlayView, so toggling
+            // hands-free mode never changes the panel geometry.
+            lastRecordingWidth = OverlayLayout.initialWidth
+            return OverlayLayout.initialWidth
+        case .processing:
+            // Preserve the final recording geometry while the content crossfades.
+            return lastRecordingWidth
+        case .error:
+            let text = statusText ?? "Something went wrong"
+            let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
             let measuredTextWidth = ceil(
                 (text as NSString).size(withAttributes: [.font: font]).width
             )
@@ -152,7 +165,7 @@ public final class OverlayWindowController {
                 + OverlayLayout.compactIndicatorWidth
                 + contentSpacing
                 + measuredTextWidth
-            return min(max(naturalWidth, 140), 380)
+            return min(max(naturalWidth, lastRecordingWidth), 260)
         }
     }
 }

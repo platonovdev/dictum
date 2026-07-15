@@ -54,8 +54,8 @@ public final class SettingsViewModel: ObservableObject {
                 do {
                     try launchAtLoginService.setEnabled(currentSettings.launchAtLogin)
                     launchAtLoginNotice = currentSettings.launchAtLogin
-                        ? "Launch at login is enabled."
-                        : "Launch at login is disabled."
+                        ? L10n.text("Launch at login is enabled.", "Запуск при входе включён.")
+                        : L10n.text("Launch at login is disabled.", "Запуск при входе выключен.")
                 } catch let error as AppError {
                     launchAtLoginNotice = error.userFacingDescription
                 } catch {

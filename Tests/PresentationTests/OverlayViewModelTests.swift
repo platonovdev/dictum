@@ -16,7 +16,7 @@ func overlayViewModelShowsStatusTextOutsideRecording() async {
     await waitUntil { viewModel.visualState == .processing }
 
     #expect(viewModel.visualState == .processing)
-    #expect(viewModel.statusText == "Transcribing...")
+    #expect(viewModel.statusText == nil)
     #expect(viewModel.timerText == "0:00")
 
     coordinator.sendState(.error(.audioCaptureFailed("boom")))
@@ -51,7 +51,7 @@ func overlayViewModelHidesOnIdle() async {
 }
 
 @Test
-func liveSpeechWaveformMovesWithTheIncomingBandEnergy() {
+func liveSpeechWaveformMovesStationaryBarsWithCurrentVoiceEnergy() {
     var waveform = LiveSpeechWaveform()
     let quiet = AudioMeterFrame(
         overallLevel: 0.01,
@@ -61,21 +61,39 @@ func liveSpeechWaveformMovesWithTheIncomingBandEnergy() {
         frameDuration: 0.04,
         bands: Array(repeating: 0.01, count: 9)
     )
-    let speech = AudioMeterFrame(
-        overallLevel: 0.48,
-        visualLevel: 0.62,
-        speechConfidence: 0.95,
-        isSpeechDetected: true,
-        frameDuration: 0.04,
-        bands: [0.18, 0.36, 0.68, 0.42, 0.78, 0.51, 0.29, 0.63, 0.40]
-    )
-
     let quietBars = waveform.update(with: quiet)
-    let speechBars = waveform.update(with: speech)
+    var speechBars = quietBars
+    for _ in 0..<10 {
+        speechBars = waveform.update(with: AudioMeterFrame(
+            overallLevel: 0.58,
+            visualLevel: 0.74,
+            speechConfidence: 0.95,
+            isSpeechDetected: true,
+            frameDuration: 0.04,
+            bands: [0.28, 0.86, 0.42]
+        ))
+    }
 
     #expect(quietBars.allSatisfy { $0 <= LiveSpeechWaveform.idleLevel + 0.01 })
     #expect(speechBars.max()! > 0.55)
-    #expect(Set(speechBars.map { Int($0 * 100) }).count > 5)
+    #expect(Set(speechBars.map { Int($0 * 100) }).count > 7)
+
+    let softerBars = waveform.update(with: AudioMeterFrame(
+        overallLevel: 0.22,
+        visualLevel: 0.31,
+        speechConfidence: 0.15,
+        isSpeechDetected: false,
+        frameDuration: 0.04,
+        bands: [0.52, 0.31, 0.18]
+    ))
+    let changedInPlace = zip(speechBars, softerBars).filter { abs($0 - $1) > 0.001 }.count
+    #expect(changedInPlace == LiveSpeechWaveform.barCount)
+
+    var settledBars = softerBars
+    for _ in 0..<35 {
+        settledBars = waveform.update(with: quiet)
+    }
+    #expect(settledBars.allSatisfy { $0 <= LiveSpeechWaveform.idleLevel + 0.01 })
 }
 
 private final class MockCoordinator: DictationSessionCoordinating {

@@ -1,5 +1,6 @@
 import Domain
 import Foundation
+import OSLog
 
 @MainActor
 public final class DictationSessionCoordinator: DictationSessionCoordinating {
@@ -8,6 +9,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         static let transientResetDelay: Duration = .milliseconds(900)
         static let quickTapMaxDuration: TimeInterval = 0.25
         static let doublePressWindow: TimeInterval = 0.35
+        static let processingTimeoutFloor: TimeInterval = 120
+        static let processingTimeoutMultiplier: TimeInterval = 2
+        static let processingTimeoutGrace: TimeInterval = 30
     }
 
     private enum HotkeyGestureState: Equatable {
@@ -24,6 +28,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     private let settingsStore: SettingsStore
     private let historyStore: DictationHistoryStore
     private let audioArchive: DictationAudioArchive
+    private let logger = Logger(subsystem: "com.dictator.app", category: "dictation-session")
 
     private let stateBroadcast = AsyncBroadcast<DictationSessionState>()
     private let partialBroadcast = AsyncBroadcast<String>()
@@ -36,13 +41,14 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     private var recordingModelPreparationTask: Task<Void, Never>?
     private var recordingModelPreparationError: AppError?
     private var activeSessionID = UUID()
-    private var detectedSpeechDuration: TimeInterval = 0
     private var recordingStartedAt: Date?
     private var latestPartialText: String = ""
     private var hotkeyGestureState: HotkeyGestureState = .idle
     private var hotkeyPressStartedAt: TimeInterval?
     private var lastShortTapAt: TimeInterval?
     private var modelIdleUnloadTask: Task<Void, Never>?
+    private var processingWatchdogTask: Task<Void, Never>?
+    private var activeArchivedAudio: ArchivedAudio?
 
     public init(
         transcriptionEngine: SpeechTranscriptionEngine,
@@ -104,10 +110,10 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     public func prepare() async {
         do {
             settings = try await settingsStore.load()
+            await recoverInterruptedRecordings()
             try? await enforceHistoryRetention()
             await cleanupUnreferencedAudio()
-            try await prepareLocalModel(named: settings.modelIdentifier)
-            isModelPrepared = true
+            try await ensureModelPrepared(named: settings.modelIdentifier)
             transition(to: .idle())
         } catch let error as AppError {
             transition(to: .error(error))
@@ -126,8 +132,8 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
             if modelChanged {
                 cancelScheduledModelUnload()
-                try await prepareLocalModel(named: updatedSettings.modelIdentifier)
-                isModelPrepared = true
+                isModelPrepared = false
+                try await ensureModelPrepared(named: updatedSettings.modelIdentifier)
             }
 
             scheduleModelUnloadIfNeeded()
@@ -161,7 +167,6 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         do {
             let sessionID = UUID()
             activeSessionID = sessionID
-            detectedSpeechDuration = 0
             latestPartialText = ""
 
             try await audioCaptureService.startRecording()
@@ -172,6 +177,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
             let startedAt = Date()
             recordingStartedAt = startedAt
+            logger.info("Recording started for session \(sessionID.uuidString, privacy: .public)")
             transition(to: .recording(startedAt: startedAt))
             forwardLevelEvents(for: sessionID)
 
@@ -207,8 +213,14 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             guard isCurrent(sessionID) else {
                 return
             }
+            logger.info(
+                "Recording finalized for session \(sessionID.uuidString, privacy: .public), duration \(capturedAudio.duration, format: .fixed(precision: 2))s"
+            )
 
-            if detectedSpeechDuration < Constants.minimumSpeechDuration || capturedAudio.duration < Constants.minimumSpeechDuration {
+            // Never discard a normal-length recording because a lightweight
+            // real-time VAD missed quiet speech. Whisper performs the final
+            // speech/no-speech decision; this gate only rejects accidental taps.
+            if capturedAudio.duration < Constants.minimumSpeechDuration {
                 let recoveryAudio = await archiveAudioForRecovery(
                     capturedAudio,
                     entryID: sessionID
@@ -234,6 +246,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             let archivedAudio: ArchivedAudio
             do {
                 archivedAudio = try await audioArchive.archive(capturedAudio, for: sessionID)
+                activeArchivedAudio = archivedAudio
+                startProcessingWatchdog(for: sessionID, audioDuration: archivedAudio.duration)
+                logger.info("Audio archived for session \(sessionID.uuidString, privacy: .public)")
             } catch let error as AppError {
                 let recoveryPath = FileManager.default.fileExists(atPath: capturedAudio.fileURL.path)
                     ? capturedAudio.fileURL.path
@@ -285,6 +300,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                     }
                 }
             } catch let error as AppError {
+                guard isCurrent(sessionID) else {
+                    return
+                }
                 let recoveryAudio = await retainedAudioForHistory(
                     from: archivedAudio,
                     entryID: sessionID,
@@ -304,6 +322,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                 await handleError(error)
                 return
             } catch {
+                guard isCurrent(sessionID) else {
+                    return
+                }
                 let failureError = AppError.transcriptionFailed(error.localizedDescription)
                 let recoveryAudio = await retainedAudioForHistory(
                     from: archivedAudio,
@@ -328,6 +349,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             guard isCurrent(sessionID) else {
                 return
             }
+            logger.info(
+                "Transcription completed for session \(sessionID.uuidString, privacy: .public) in \(finalTranscript.transcriptionDuration, format: .fixed(precision: 2))s"
+            )
 
             let cleaned = finalTranscript.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleaned.isEmpty else {
@@ -450,8 +474,40 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     }
 
     public func resetSession() async {
+        let interruptedArchivedAudio = activeArchivedAudio
+        let interruptedSessionID = activeSessionID
+        let interruptedStartedAt = recordingStartedAt
+        if interruptedArchivedAudio != nil {
+            activeSessionID = UUID()
+            if let cancellableEngine = transcriptionEngine as? CancellableSpeechTranscriptionEngine {
+                await cancellableEngine.cancelCurrentTranscription()
+                isModelPrepared = false
+            }
+        }
+
+        if let archivedAudio = interruptedArchivedAudio,
+           case .transcribing = state,
+           let startedAt = interruptedStartedAt {
+            let retainedAudio = await retainedAudioForHistory(
+                from: archivedAudio,
+                entryID: interruptedSessionID,
+                forceRetain: true
+            )
+            try? await persistFailedHistoryEntry(
+                id: interruptedSessionID,
+                startedAt: startedAt,
+                duration: archivedAudio.duration,
+                transcript: latestPartialText,
+                error: .transcriptionFailed("Processing was interrupted. The recording is safe and can be retried."),
+                audioArtifactPath: retainedAudio?.fileURL.path,
+                retryCount: 0,
+                failureStage: .transcription
+            )
+            await deleteOriginalArchiveIfNeeded(original: archivedAudio, retained: retainedAudio)
+        }
+        cancelProcessingWatchdog()
+        activeArchivedAudio = nil
         activeSessionID = UUID()
-        detectedSpeechDuration = 0
         levelTask?.cancel()
         levelTask = nil
         hotkeyGestureState = .idle
@@ -523,9 +579,6 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                 await MainActor.run {
                     guard let self, self.isCurrent(sessionID) else {
                         return
-                    }
-                    if meterFrame.isSpeechDetected {
-                        self.detectedSpeechDuration += meterFrame.frameDuration
                     }
                     self.meterBroadcast.yield(meterFrame)
                 }
@@ -629,6 +682,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     }
 
     private func handleError(_ error: AppError) async {
+        logger.error("Session failed: \(error.userFacingDescription, privacy: .public)")
         switch error {
         case .permissionsMissing:
             transition(to: .error(error))
@@ -748,7 +802,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
         for entry in entries where entry.audioArtifactPath != nil
             && !entry.needsRecoveryAudio
-            && !settings.audioRetention.keepsAudio(startedAt: entry.startedAt, now: now) {
+            // A successful retry gives an older recovery recording a fresh
+            // retention window; otherwise it could be deleted immediately.
+            && !settings.audioRetention.keepsAudio(startedAt: entry.finishedAt, now: now) {
             if let path = entry.audioArtifactPath {
                 await audioArchive.deleteArchivedAudio(at: path)
             }
@@ -786,15 +842,14 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
         let sessionID = entry.id
         activeSessionID = sessionID
-        detectedSpeechDuration = 0
         latestPartialText = ""
         recordingStartedAt = entry.startedAt
         transition(to: .transcribing(partialText: nil))
+        startRetryWatchdog(for: entry)
 
         do {
             if !isModelPrepared {
-                try await prepareLocalModel(named: settings.modelIdentifier)
-                isModelPrepared = true
+                try await ensureModelPrepared(named: settings.modelIdentifier)
             }
             let finalTranscript = try await transcriptionEngine.transcribe(
                 archivedAudio
@@ -858,6 +913,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             recordingStartedAt = nil
             latestPartialText = ""
         } catch let error as AppError {
+            guard isCurrent(sessionID) else {
+                return
+            }
             let failedEntry = DictationHistoryEntry.make(
                 id: entry.id,
                 startedAt: entry.startedAt,
@@ -874,6 +932,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             try await updateHistoryEntry(failedEntry)
             await handleError(error)
         } catch {
+            guard isCurrent(sessionID) else {
+                return
+            }
             let failureError = AppError.transcriptionFailed(error.localizedDescription)
             let failedEntry = DictationHistoryEntry.make(
                 id: entry.id,
@@ -929,12 +990,6 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         }
     }
 
-    private func prepareLocalModel(named modelIdentifier: String) async throws {
-        // Model preparation is intentionally silent. Recording starts first
-        // when needed, and only actionable failures surface in the overlay.
-        try await transcriptionEngine.prepareModel(named: modelIdentifier) { _ in }
-    }
-
     private func prepareModelWhileRecording(named modelIdentifier: String) {
         guard recordingModelPreparationTask == nil else {
             return
@@ -976,12 +1031,34 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         }
     }
 
+    private func ensureModelPrepared(named modelIdentifier: String) async throws {
+        guard !isModelPrepared else {
+            return
+        }
+        prepareModelWhileRecording(named: modelIdentifier)
+        if let task = recordingModelPreparationTask {
+            await task.value
+        }
+        if let error = recordingModelPreparationError {
+            recordingModelPreparationError = nil
+            throw error
+        }
+        guard isModelPrepared else {
+            throw AppError.modelUnavailable
+        }
+    }
+
     private func transition(to newState: DictationSessionState) {
         state = newState
         stateBroadcast.yield(newState)
 
         if case .idle = newState {
+            cancelProcessingWatchdog()
+            activeArchivedAudio = nil
             scheduleModelUnloadIfNeeded()
+        } else if case .error = newState {
+            cancelProcessingWatchdog()
+            activeArchivedAudio = nil
         } else {
             cancelScheduledModelUnload()
         }
@@ -1019,5 +1096,150 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     private func cancelScheduledModelUnload() {
         modelIdleUnloadTask?.cancel()
         modelIdleUnloadTask = nil
+    }
+
+    private func startProcessingWatchdog(for sessionID: UUID, audioDuration: TimeInterval) {
+        cancelProcessingWatchdog()
+        let timeout = max(
+            Constants.processingTimeoutFloor,
+            (audioDuration * Constants.processingTimeoutMultiplier) + Constants.processingTimeoutGrace
+        )
+        processingWatchdogTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(timeout))
+            } catch {
+                return
+            }
+            guard let self,
+                  self.isCurrent(sessionID),
+                  let archivedAudio = self.activeArchivedAudio,
+                  let startedAt = self.recordingStartedAt else {
+                return
+            }
+            guard case .transcribing = self.state else {
+                return
+            }
+
+            self.logger.fault("Processing watchdog fired for session \(sessionID.uuidString, privacy: .public)")
+            let timeoutError = AppError.transcriptionFailed(
+                "Processing took too long. The recording is safe in History and can be retried."
+            )
+            self.activeSessionID = UUID()
+            if let cancellableEngine = self.transcriptionEngine as? CancellableSpeechTranscriptionEngine {
+                await cancellableEngine.cancelCurrentTranscription()
+                self.isModelPrepared = false
+            }
+            let retainedAudio = await self.retainedAudioForHistory(
+                from: archivedAudio,
+                entryID: sessionID,
+                forceRetain: true
+            )
+            try? await self.persistFailedHistoryEntry(
+                id: sessionID,
+                startedAt: startedAt,
+                duration: archivedAudio.duration,
+                transcript: self.latestPartialText,
+                error: timeoutError,
+                audioArtifactPath: retainedAudio?.fileURL.path,
+                retryCount: 0,
+                failureStage: .transcription
+            )
+            await self.deleteOriginalArchiveIfNeeded(original: archivedAudio, retained: retainedAudio)
+
+            // Invalidate the still-running native decode. Its eventual result
+            // is ignored, while the UI immediately becomes usable again.
+            await self.handleError(timeoutError)
+        }
+    }
+
+    private func cancelProcessingWatchdog() {
+        processingWatchdogTask?.cancel()
+        processingWatchdogTask = nil
+    }
+
+    private func startRetryWatchdog(for entry: DictationHistoryEntry) {
+        cancelProcessingWatchdog()
+        let sessionID = entry.id
+        let timeout = max(
+            Constants.processingTimeoutFloor,
+            (entry.duration * Constants.processingTimeoutMultiplier) + Constants.processingTimeoutGrace
+        )
+        processingWatchdogTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(timeout))
+            } catch {
+                return
+            }
+            guard let self, self.isCurrent(sessionID), case .transcribing = self.state else {
+                return
+            }
+
+            self.logger.fault("Retry watchdog fired for session \(sessionID.uuidString, privacy: .public)")
+            let timeoutError = AppError.transcriptionFailed(
+                "Processing took too long. The saved recording is unchanged and can be retried."
+            )
+            self.activeSessionID = UUID()
+            if let cancellableEngine = self.transcriptionEngine as? CancellableSpeechTranscriptionEngine {
+                await cancellableEngine.cancelCurrentTranscription()
+                self.isModelPrepared = false
+            }
+            let failedEntry = DictationHistoryEntry.make(
+                id: entry.id,
+                startedAt: entry.startedAt,
+                finishedAt: Date(),
+                transcript: self.latestPartialText,
+                duration: entry.duration,
+                language: nil,
+                status: .failed,
+                statusDetail: timeoutError.userFacingDescription,
+                audioArtifactPath: entry.audioArtifactPath,
+                retryCount: entry.retryCount + 1,
+                failureStage: .transcription
+            )
+            try? await self.updateHistoryEntry(failedEntry)
+            await self.handleError(timeoutError)
+        }
+    }
+
+    private func recoverInterruptedRecordings() async {
+        let recordings = await audioCaptureService.recoverPendingRecordings()
+        guard !recordings.isEmpty else {
+            return
+        }
+
+        let existingIDs = Set(((try? await historyStore.loadEntries()) ?? []).map(\.id))
+        for recording in recordings {
+            let recoveredID = UUID(uuidString: recording.fileURL.deletingPathExtension().lastPathComponent) ?? UUID()
+            if existingIDs.contains(recoveredID) {
+                try? FileManager.default.removeItem(at: recording.fileURL)
+                continue
+            }
+
+            let modifiedAt = (try? recording.fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? Date()
+            let startedAt = modifiedAt.addingTimeInterval(-recording.duration)
+            let retainedAudio = await archiveAudioForRecovery(recording, entryID: recoveredID)
+            let recoveryError = AppError.audioCaptureFailed(
+                "Dictator recovered this recording after an interrupted session. Retry it from History."
+            )
+            do {
+                try await persistHistoryEntry(
+                    DictationHistoryEntry.make(
+                        id: recoveredID,
+                        startedAt: startedAt,
+                        transcript: "",
+                        duration: recording.duration,
+                        language: nil,
+                        status: .failed,
+                        statusDetail: recoveryError.userFacingDescription,
+                        audioArtifactPath: retainedAudio?.fileURL.path,
+                        failureStage: .audioCapture
+                    )
+                )
+                logger.notice("Recovered interrupted recording \(recoveredID.uuidString, privacy: .public)")
+            } catch {
+                logger.error("Could not register recovered recording \(recoveredID.uuidString, privacy: .public)")
+            }
+        }
     }
 }

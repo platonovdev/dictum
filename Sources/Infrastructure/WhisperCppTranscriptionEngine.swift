@@ -171,6 +171,12 @@ private actor WhisperCppContext {
     private let handle: WhisperContextHandle
 
     init(modelURL: URL) throws {
+        // The bundled ggml Metal backend enables residency sets on macOS 15+
+        // and starts a 5 ms heartbeat for them. Dictator runs on Apple unified
+        // memory, where ggml itself notes that residency sets are unnecessary.
+        // Disabling them prevents that worker from surviving model unloads and
+        // consuming CPU for the rest of a long-running app session.
+        setenv("GGML_METAL_NO_RESIDENCY", "1", 0)
         var parameters = whisper_context_default_params()
         parameters.use_gpu = true
         parameters.flash_attn = true
@@ -190,16 +196,27 @@ private actor WhisperCppContext {
         prompt: String,
         translateToEnglish: Bool
     ) throws -> (text: String, language: String?) {
-        var parameters = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
+        // A small beam is the best reliability/speed point for the Turbo model
+        // in dictation: it is materially less prone to locally plausible word
+        // substitutions than one-shot greedy decoding, without a large search.
+        var parameters = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH)
         parameters.print_realtime = false
         parameters.print_progress = false
         parameters.print_timestamps = false
         parameters.print_special = false
         parameters.translate = translateToEnglish
         parameters.no_context = true
-        parameters.no_timestamps = true
+        // Timestamp tokens are not shown in the UI, but Whisper uses them
+        // internally to advance through successive 30-second windows. When
+        // they were suppressed, long recordings could stop decoding early
+        // even though the complete audio file had been captured.
+        parameters.no_timestamps = false
         parameters.single_segment = false
         parameters.suppress_blank = true
+        parameters.suppress_nst = true
+        parameters.no_speech_thold = 0.2
+        parameters.beam_search.beam_size = 3
+        parameters.beam_search.patience = -1
         // In whisper.cpp `detect_language` means “detect only, then exit”.
         // For automatic *transcription* the language value must be `auto`.
         parameters.detect_language = false

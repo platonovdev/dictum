@@ -14,7 +14,7 @@ public final class StatisticsWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Dictum Statistics"
+        window.title = L10n.text("Dictator Statistics", "Статистика — Диктатор")
         window.isReleasedWhenClosed = false
         window.center()
         window.contentView = NSHostingView(rootView: rootView)

@@ -2,17 +2,19 @@ import AppKit
 import SwiftUI
 
 enum OverlayLayout {
-    static let initialWidth: CGFloat = 174
-    static let height: CGFloat = 50
-    static let cornerRadius: CGFloat = 15
-    static let waveformWidth: CGFloat = 104
-    static let compactIndicatorWidth: CGFloat = 18
+    static let initialWidth: CGFloat = 162
+    static let height: CGFloat = 40
+    static let cornerRadius: CGFloat = 12
+    static let waveformWidth: CGFloat = 82
+    static let compactIndicatorWidth: CGFloat = 15
 }
 
 public struct OverlayView: View {
     @ObservedObject private var viewModel: OverlayViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let morphAnimation: Animation = .spring(duration: 0.34, bounce: 0.06)
+    private static let stateAnimation: Animation = .easeInOut(duration: 0.22)
+    private static let lockAnimation: Animation = .easeOut(duration: 0.18)
 
     public init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
@@ -21,82 +23,124 @@ public struct OverlayView: View {
     public var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
+                .fill(Color.white.opacity(0.985))
 
-            HStack(spacing: 8) {
-                visualIndicator
-                    .frame(width: indicatorWidth, height: 24)
+            // A restrained highlight keeps the light panel distinct from the desktop
+            // without tinting the content itself blue.
+            RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [.white.opacity(0.34), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
 
-                Text(displayText)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(Color(nsColor: .labelColor))
-                    .lineLimit(1)
-                    .layoutPriority(1)
-                    .contentTransition(.opacity)
-
-                if viewModel.isLockedMode {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                        .frame(width: 10)
-                        .transition(.scale(scale: 0.75).combined(with: .opacity))
-                }
-            }
-            .padding(.horizontal, 12)
+            stateContent
+                .padding(.horizontal, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous)
-                .strokeBorder(borderColor, lineWidth: viewModel.isLockedMode ? 1.5 : 1)
+                .strokeBorder(borderColor, lineWidth: viewModel.isLockedMode ? 1 : 0.7)
         }
+        .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
         .clipShape(RoundedRectangle(cornerRadius: OverlayLayout.cornerRadius, style: .continuous))
         .compositingGroup()
-        .animation(Self.morphAnimation, value: viewModel.visualState)
-        .animation(Self.morphAnimation, value: viewModel.isLockedMode)
+        .animation(reduceMotion ? nil : Self.stateAnimation, value: viewModel.visualState)
+        .animation(reduceMotion ? nil : Self.lockAnimation, value: viewModel.isLockedMode)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(accessibilityValue)
+        .help(viewModel.statusText ?? "")
     }
 
-    private var indicatorWidth: CGFloat {
-        viewModel.visualState == .recording
-            ? OverlayLayout.waveformWidth
-            : OverlayLayout.compactIndicatorWidth
-    }
-
-    private var displayText: String {
+    @ViewBuilder
+    private var stateContent: some View {
         switch viewModel.visualState {
         case .recording:
-            return viewModel.timerText
-        case .processing, .error:
-            return viewModel.statusText ?? ""
+            recordingContent
+                .transition(.opacity)
+        case .processing:
+            ProcessingOrbView(accent: Color.black.opacity(0.56))
+                .frame(width: OverlayLayout.compactIndicatorWidth, height: 15)
+                .frame(maxWidth: .infinity, alignment: .center)
+            .transition(.opacity)
+        case .error:
+            statusContent {
+                ErrorOrbView()
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private var recordingContent: some View {
+        HStack(spacing: 7) {
+            LiveSpeechBarsView(levels: viewModel.waveformLevels)
+                .frame(width: OverlayLayout.waveformWidth, height: 20)
+
+            Text(viewModel.timerText)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.black.opacity(0.82))
+                .frame(width: 32, alignment: .leading)
+
+            ZStack {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(accentColor)
+                    .opacity(viewModel.isLockedMode ? 1 : 0)
+                    .scaleEffect(viewModel.isLockedMode ? 1 : 0.82)
+            }
+            .frame(width: 14)
         }
     }
 
     @ViewBuilder
-    private var visualIndicator: some View {
-        ZStack {
-            if viewModel.visualState == .recording {
-                LiveSpeechBarsView(levels: viewModel.waveformLevels)
-                    .transition(.opacity)
-            }
-
-            if viewModel.visualState == .processing {
-                ProcessingOrbView(accent: Color(nsColor: .labelColor))
-                    .frame(width: 18, height: 18)
-                    .transition(.opacity)
-            }
-
-            if viewModel.visualState == .error {
-                ErrorOrbView()
-                    .frame(width: 18, height: 18)
-                    .transition(.opacity)
-            }
+    private func statusContent<Indicator: View>(@ViewBuilder indicator: () -> Indicator) -> some View {
+        HStack(spacing: 7) {
+            indicator()
+                .frame(width: OverlayLayout.compactIndicatorWidth, height: 15)
+            Text(viewModel.statusText ?? "")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.black.opacity(0.82))
+                .lineLimit(1)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var accentColor: Color {
+        Color(nsColor: .controlAccentColor)
     }
 
     private var borderColor: Color {
         viewModel.isLockedMode
-            ? Color(nsColor: .controlAccentColor).opacity(0.5)
-            : Color(nsColor: .separatorColor).opacity(0.4)
+            ? accentColor.opacity(0.48)
+            : .black.opacity(0.10)
+    }
+
+    private var accessibilityLabel: String {
+        switch viewModel.visualState {
+        case .recording:
+            return viewModel.isLockedMode
+                ? L10n.text("Dictator recording, locked", "Диктатор записывает, запись закреплена")
+                : L10n.text("Dictator recording", "Диктатор записывает")
+        case .processing:
+            return L10n.text("Dictator is processing speech", "Диктатор обрабатывает речь")
+        case .error:
+            return L10n.text("Dictator error", "Ошибка Диктатора")
+        }
+    }
+
+    private var accessibilityValue: String {
+        switch viewModel.visualState {
+        case .recording:
+            return viewModel.timerText
+        case .processing:
+            return L10n.text("Please wait", "Подождите")
+        case .error:
+            return viewModel.statusText ?? ""
+        }
     }
 }
 
@@ -107,13 +151,13 @@ private struct LiveSpeechBarsView: View {
         Canvas { context, size in
             let centerY = size.height / 2
             let count = levels.count
-            let gap: CGFloat = 1.5
-            let barWidth = max(2, (size.width - (CGFloat(max(count - 1, 0)) * gap)) / CGFloat(max(count, 1)))
+            let gap: CGFloat = 1.2
+            let barWidth = max(1.7, (size.width - (CGFloat(max(count - 1, 0)) * gap)) / CGFloat(max(count, 1)))
 
             for i in 0..<count {
                 let level = levels[i]
                 let intensity = CGFloat(min(max(level, 0), 1))
-                let barH = max(3, intensity * size.height)
+                let barH = max(1, intensity * size.height)
                 let opacity = 0.35 + (Double(intensity) * 0.62)
 
                 let x = CGFloat(i) * (barWidth + gap)
@@ -135,6 +179,7 @@ private struct LiveSpeechBarsView: View {
 private struct ProcessingOrbView: View {
     let accent: Color
     @State private var isAnimating = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -142,18 +187,18 @@ private struct ProcessingOrbView: View {
                 .fill(accent.opacity(0.08))
 
             Circle()
-                .stroke(accent.opacity(0.16), lineWidth: 2)
+                .stroke(accent.opacity(0.16), lineWidth: 1.5)
 
             Circle()
                 .trim(from: 0.10, to: 0.72)
                 .stroke(
                     accent.opacity(0.88),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
                 )
                 .rotationEffect(.degrees(isAnimating ? 360 : 0))
         }
         .onAppear {
-            guard !isAnimating else {
+            guard !reduceMotion, !isAnimating else {
                 return
             }
 
@@ -171,10 +216,10 @@ private struct ErrorOrbView: View {
                 .fill(Color(nsColor: .systemRed).opacity(0.12))
 
             Circle()
-                .stroke(Color(nsColor: .systemRed).opacity(0.28), lineWidth: 2)
+                .stroke(Color(nsColor: .systemRed).opacity(0.28), lineWidth: 1.5)
 
             Image(systemName: "exclamationmark")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(Color(nsColor: .systemRed).opacity(0.92))
         }
     }
