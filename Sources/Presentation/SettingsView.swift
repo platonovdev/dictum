@@ -27,7 +27,32 @@ public struct SettingsView: View {
                     Toggle(L10n.text("Add a space after each dictation", "Добавлять пробел после каждой диктовки"), isOn: $settingsViewModel.settings.appendTrailingSpace)
                     Toggle(L10n.text("Show floating recording indicator", "Показывать плавающий индикатор записи"), isOn: $settingsViewModel.settings.showOverlay)
                     VStack(alignment: .leading, spacing: 7) {
-                        LabeledContent(L10n.text("Interface sounds", "Звуки интерфейса")) {
+                        LabeledContent(L10n.text("Sound", "Звук")) {
+                            HStack(spacing: 8) {
+                                Picker("", selection: $settingsViewModel.settings.feedbackSoundTheme) {
+                                    ForEach(DictationSoundTheme.allCases, id: \.self) { theme in
+                                        Text(soundThemeTitle(theme)).tag(theme)
+                                    }
+                                }
+                                .labelsHidden()
+                                .frame(width: 150)
+                                .onChange(of: settingsViewModel.settings.feedbackSoundTheme) {
+                                    settingsViewModel.previewFeedbackSound()
+                                }
+
+                                Button {
+                                    settingsViewModel.previewFeedbackSound()
+                                } label: {
+                                    Image(systemName: "play.fill")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(settingsViewModel.settings.feedbackSoundVolume <= 0.001)
+                                .help(L10n.text("Preview sound", "Прослушать звук"))
+                                .accessibilityLabel(L10n.text("Preview selected sound", "Прослушать выбранный звук"))
+                            }
+                        }
+                        LabeledContent(L10n.text("Volume", "Громкость")) {
                             Text(soundVolumeLabel)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
@@ -167,6 +192,21 @@ public struct SettingsView: View {
         case ...0.001: "speaker.slash.fill"
         case ..<0.5: "speaker.wave.1.fill"
         default: "speaker.wave.2.fill"
+        }
+    }
+
+    private func soundThemeTitle(_ theme: DictationSoundTheme) -> String {
+        switch theme {
+        case .glass: L10n.text("Glass", "Стекло")
+        case .crystal: L10n.text("Crystal", "Кристалл")
+        case .ripple: L10n.text("Ripple", "Рябь")
+        case .softTap: L10n.text("Soft Tap", "Мягкий щелчок")
+        case .bloom: L10n.text("Bloom", "Расцвет")
+        case .pulse: L10n.text("Pulse", "Пульс")
+        case .air: L10n.text("Air", "Воздух")
+        case .wood: L10n.text("Wood", "Дерево")
+        case .sonar: L10n.text("Sonar", "Сонар")
+        case .bubble: L10n.text("Drop", "Капля")
         }
     }
 

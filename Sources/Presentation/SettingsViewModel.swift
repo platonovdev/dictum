@@ -15,15 +15,18 @@ public final class SettingsViewModel: ObservableObject {
     private let loadSettingsUseCase: LoadSettingsUseCase
     private let updateSettingsUseCase: UpdateSettingsUseCase
     private let launchAtLoginService: LaunchAtLoginService
+    private let soundFeedbackService: DictationSoundFeedbackService?
 
     public init(
         loadSettingsUseCase: LoadSettingsUseCase,
         updateSettingsUseCase: UpdateSettingsUseCase,
-        launchAtLoginService: LaunchAtLoginService
+        launchAtLoginService: LaunchAtLoginService,
+        soundFeedbackService: DictationSoundFeedbackService? = nil
     ) {
         self.loadSettingsUseCase = loadSettingsUseCase
         self.updateSettingsUseCase = updateSettingsUseCase
         self.launchAtLoginService = launchAtLoginService
+        self.soundFeedbackService = soundFeedbackService
 
         Task { @MainActor in
             await self.load()
@@ -67,5 +70,12 @@ public final class SettingsViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    public func previewFeedbackSound() {
+        soundFeedbackService?.playPreview(
+            theme: settings.feedbackSoundTheme,
+            volume: settings.feedbackSoundVolume
+        )
     }
 }

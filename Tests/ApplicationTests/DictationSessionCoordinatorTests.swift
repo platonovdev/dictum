@@ -7,6 +7,15 @@ import Testing
 
 @Test
 @MainActor
+func bundledFeedbackLibraryContainsEverySoundTheme() {
+    let service = BundledDictationSoundFeedbackService()
+
+    #expect(service.availableThemeCount == DictationSoundTheme.allCases.count)
+    #expect(service.availableThemeCount == 10)
+}
+
+@Test
+@MainActor
 func startDictationTransitionsToPermissionErrorWhenPermissionsMissing() async {
     let coordinator = DictationSessionCoordinator(
         transcriptionEngine: MockSpeechEngine(),
@@ -99,6 +108,7 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     let soundFeedback = MockSoundFeedbackService()
     var settings = AppSettings.default
     settings.feedbackSoundVolume = 0.65
+    settings.feedbackSoundTheme = .crystal
     let coordinator = DictationSessionCoordinator(
         transcriptionEngine: MockSpeechEngine(finalText: "hello world"),
         audioCaptureService: MockAudioCaptureService(),
@@ -128,8 +138,8 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     #expect(entries.first?.status == .inserted)
     #expect(entries.first?.audioArtifactPath == "/tmp/retained.m4a")
     #expect(await archive.deletedPaths == ["/tmp/original.wav"])
-    #expect(soundFeedback.recordingStartedVolumes == [0.65])
-    #expect(soundFeedback.processingStartedVolumes == [0.65])
+    #expect(soundFeedback.recordingStartedCues == [.init(theme: .crystal, volume: 0.65)])
+    #expect(soundFeedback.processingStartedCues == [.init(theme: .crystal, volume: 0.65)])
 }
 
 @Test
@@ -382,15 +392,20 @@ private final class MockHistoryStore: DictationHistoryStore {
 
 @MainActor
 private final class MockSoundFeedbackService: DictationSoundFeedbackService {
-    private(set) var recordingStartedVolumes: [Double] = []
-    private(set) var processingStartedVolumes: [Double] = []
-
-    func playRecordingStarted(volume: Double) {
-        recordingStartedVolumes.append(volume)
+    struct Cue: Equatable {
+        let theme: DictationSoundTheme
+        let volume: Double
     }
 
-    func playProcessingStarted(volume: Double) {
-        processingStartedVolumes.append(volume)
+    private(set) var recordingStartedCues: [Cue] = []
+    private(set) var processingStartedCues: [Cue] = []
+
+    func playRecordingStarted(theme: DictationSoundTheme, volume: Double) {
+        recordingStartedCues.append(.init(theme: theme, volume: volume))
+    }
+
+    func playProcessingStarted(theme: DictationSoundTheme, volume: Double) {
+        processingStartedCues.append(.init(theme: theme, volume: volume))
     }
 }
 

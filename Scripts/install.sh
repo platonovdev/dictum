@@ -35,6 +35,7 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+cp "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$APP_BUNDLE/Contents/Resources/"
 find "$ROOT_DIR/Resources" -maxdepth 1 -name '*.lproj' -exec cp -R {} "$APP_BUNDLE/Contents/Resources/" \;
 cp "$BUILD_DIR/$PRODUCT_NAME" "$APP_BUNDLE/Contents/MacOS/$PRODUCT_NAME"
 cp "$BUILD_DIR/DictatorTranscriber" "$APP_BUNDLE/Contents/MacOS/DictatorTranscriber"
@@ -46,7 +47,9 @@ if [[ -d "$BUILD_DIR/whisper.framework" ]]; then
 fi
 chmod +x "$APP_BUNDLE/Contents/MacOS/$PRODUCT_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/DictatorTranscriber"
-find "$BUILD_DIR" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$APP_BUNDLE/Contents/Resources/" \;
+# `.build/release` is a SwiftPM symlink on macOS. Follow it so target resource
+# bundles (including feedback sounds) are included in the installed app.
+find -L "$BUILD_DIR" -maxdepth 1 -type d -name '*.bundle' -exec cp -R {} "$APP_BUNDLE/Contents/Resources/" \;
 
 if [[ -z "$SIGN_IDENTITY" ]]; then
   SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/Apple Development:/ { print $2; exit }')"

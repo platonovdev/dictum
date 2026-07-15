@@ -50,8 +50,15 @@ public extension AudioCaptureService {
 /// A volume of zero is the accessible, fully silent mode.
 @MainActor
 public protocol DictationSoundFeedbackService {
-    func playRecordingStarted(volume: Double)
-    func playProcessingStarted(volume: Double)
+    func playRecordingStarted(theme: DictationSoundTheme, volume: Double)
+    func playProcessingStarted(theme: DictationSoundTheme, volume: Double)
+    func playPreview(theme: DictationSoundTheme, volume: Double)
+}
+
+public extension DictationSoundFeedbackService {
+    func playPreview(theme: DictationSoundTheme, volume: Double) {
+        playRecordingStarted(theme: theme, volume: volume)
+    }
 }
 
 @MainActor

@@ -112,6 +112,19 @@ public struct HotkeyConfiguration: Codable, Hashable, Sendable {
     public static let `default` = HotkeyConfiguration(kind: .rightCommandHold)
 }
 
+public enum DictationSoundTheme: String, Codable, CaseIterable, Sendable {
+    case glass
+    case crystal
+    case ripple
+    case softTap
+    case bloom
+    case pulse
+    case air
+    case wood
+    case sonar
+    case bubble
+}
+
 public struct AppSettings: Codable, Equatable, Sendable {
     public var modelIdentifier: String
     public var hotkey: HotkeyConfiguration
@@ -127,6 +140,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var audioRetention: AudioRetentionPolicy
     public var historyLimit: Int
     public var feedbackSoundVolume: Double
+    public var feedbackSoundTheme: DictationSoundTheme
 
     public init(
         modelIdentifier: String,
@@ -142,7 +156,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         modelMemoryPolicy: ModelMemoryPolicy = .unloadAfterFiveMinutes,
         audioRetention: AudioRetentionPolicy = .sevenDays,
         historyLimit: Int = 200,
-        feedbackSoundVolume: Double = 0.4
+        feedbackSoundVolume: Double = 0.4,
+        feedbackSoundTheme: DictationSoundTheme = .glass
     ) {
         self.modelIdentifier = modelIdentifier
         self.hotkey = hotkey
@@ -160,12 +175,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.feedbackSoundVolume = feedbackSoundVolume.isFinite
             ? min(max(feedbackSoundVolume, 0), 1)
             : 0.4
+        self.feedbackSoundTheme = feedbackSoundTheme
     }
 
     private enum CodingKeys: String, CodingKey {
         case modelIdentifier, hotkey, autoPaste, launchAtLogin, overlayPosition
         case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, modelMemoryPolicy, audioRetention, historyLimit
-        case feedbackSoundVolume
+        case feedbackSoundVolume, feedbackSoundTheme
     }
 
     public init(from decoder: any Decoder) throws {
@@ -191,6 +207,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         feedbackSoundVolume = decodedSoundVolume.isFinite
             ? min(max(decodedSoundVolume, 0), 1)
             : 0.4
+        feedbackSoundTheme = try container.decodeIfPresent(DictationSoundTheme.self, forKey: .feedbackSoundTheme) ?? .glass
     }
 
     public static let `default` = AppSettings(

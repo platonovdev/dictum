@@ -182,7 +182,10 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             recordingStartedAt = startedAt
             logger.info("Recording started for session \(sessionID.uuidString, privacy: .public)")
             transition(to: .recording(startedAt: startedAt))
-            soundFeedbackService?.playRecordingStarted(volume: settings.feedbackSoundVolume)
+            soundFeedbackService?.playRecordingStarted(
+                theme: settings.feedbackSoundTheme,
+                volume: settings.feedbackSoundVolume
+            )
             forwardLevelEvents(for: sessionID)
 
             // Never make a thought wait for a model wake-up. If idle memory
@@ -217,7 +220,10 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             guard isCurrent(sessionID) else {
                 return
             }
-            soundFeedbackService?.playProcessingStarted(volume: settings.feedbackSoundVolume)
+            soundFeedbackService?.playProcessingStarted(
+                theme: settings.feedbackSoundTheme,
+                volume: settings.feedbackSoundVolume
+            )
             logger.info(
                 "Recording finalized for session \(sessionID.uuidString, privacy: .public), duration \(capturedAudio.duration, format: .fixed(precision: 2))s"
             )

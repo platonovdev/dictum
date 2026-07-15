@@ -16,7 +16,7 @@ final class AppDependencyContainer {
     let hotkeyService = QuartzHotkeyService()
     let launchAtLoginService = SystemLaunchAtLoginService()
     let audioArchive = FileSystemDictationAudioArchive()
-    let soundFeedbackService = SynthesizedDictationSoundFeedbackService()
+    let soundFeedbackService = BundledDictationSoundFeedbackService()
 
     let loadSettingsUseCase: LoadSettingsUseCase
     let updateSettingsUseCase: UpdateSettingsUseCase
@@ -61,7 +61,8 @@ final class AppDependencyContainer {
         settingsViewModel = SettingsViewModel(
             loadSettingsUseCase: loadSettingsUseCase,
             updateSettingsUseCase: updateSettingsUseCase,
-            launchAtLoginService: launchAtLoginService
+            launchAtLoginService: launchAtLoginService,
+            soundFeedbackService: soundFeedbackService
         )
         permissionsViewModel = PermissionsViewModel(
             permissionService: permissionService,

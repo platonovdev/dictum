@@ -30,6 +30,9 @@ let package = Package(
                 "Domain",
                 "Application",
                 "WhisperCpp"
+            ],
+            resources: [
+                .copy("Resources/FeedbackSounds")
             ]
         ),
         .target(
