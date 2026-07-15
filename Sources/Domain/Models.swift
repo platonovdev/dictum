@@ -126,6 +126,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var modelMemoryPolicy: ModelMemoryPolicy
     public var audioRetention: AudioRetentionPolicy
     public var historyLimit: Int
+    public var feedbackSoundVolume: Double
 
     public init(
         modelIdentifier: String,
@@ -140,7 +141,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showOverlay: Bool = true,
         modelMemoryPolicy: ModelMemoryPolicy = .unloadAfterFiveMinutes,
         audioRetention: AudioRetentionPolicy = .sevenDays,
-        historyLimit: Int = 200
+        historyLimit: Int = 200,
+        feedbackSoundVolume: Double = 0.4
     ) {
         self.modelIdentifier = modelIdentifier
         self.hotkey = hotkey
@@ -155,11 +157,15 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.modelMemoryPolicy = modelMemoryPolicy
         self.audioRetention = audioRetention
         self.historyLimit = min(max(historyLimit, 10), 2_000)
+        self.feedbackSoundVolume = feedbackSoundVolume.isFinite
+            ? min(max(feedbackSoundVolume, 0), 1)
+            : 0.4
     }
 
     private enum CodingKeys: String, CodingKey {
         case modelIdentifier, hotkey, autoPaste, launchAtLogin, overlayPosition
         case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, modelMemoryPolicy, audioRetention, historyLimit
+        case feedbackSoundVolume
     }
 
     public init(from decoder: any Decoder) throws {
@@ -181,6 +187,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         modelMemoryPolicy = try container.decodeIfPresent(ModelMemoryPolicy.self, forKey: .modelMemoryPolicy) ?? .unloadAfterFiveMinutes
         audioRetention = try container.decodeIfPresent(AudioRetentionPolicy.self, forKey: .audioRetention) ?? .sevenDays
         historyLimit = min(max(try container.decodeIfPresent(Int.self, forKey: .historyLimit) ?? 200, 10), 2_000)
+        let decodedSoundVolume = try container.decodeIfPresent(Double.self, forKey: .feedbackSoundVolume) ?? 0.4
+        feedbackSoundVolume = decodedSoundVolume.isFinite
+            ? min(max(decodedSoundVolume, 0), 1)
+            : 0.4
     }
 
     public static let `default` = AppSettings(

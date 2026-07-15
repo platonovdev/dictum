@@ -96,6 +96,9 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     let insertionService = MockInsertionService()
     let historyStore = MockHistoryStore()
     let archive = MockArchive()
+    let soundFeedback = MockSoundFeedbackService()
+    var settings = AppSettings.default
+    settings.feedbackSoundVolume = 0.65
     let coordinator = DictationSessionCoordinator(
         transcriptionEngine: MockSpeechEngine(finalText: "hello world"),
         audioCaptureService: MockAudioCaptureService(),
@@ -107,9 +110,10 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
                 inputMonitoring: .authorized
             )
         ),
-        settingsStore: MockSettingsStore(),
+        settingsStore: MockSettingsStore(settings: settings),
         historyStore: historyStore,
-        audioArchive: archive
+        audioArchive: archive,
+        soundFeedbackService: soundFeedback
     )
 
     await coordinator.prepare()
@@ -124,6 +128,8 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     #expect(entries.first?.status == .inserted)
     #expect(entries.first?.audioArtifactPath == "/tmp/retained.m4a")
     #expect(await archive.deletedPaths == ["/tmp/original.wav"])
+    #expect(soundFeedback.recordingStartedVolumes == [0.65])
+    #expect(soundFeedback.processingStartedVolumes == [0.65])
 }
 
 @Test
@@ -371,6 +377,20 @@ private final class MockHistoryStore: DictationHistoryStore {
 
     func delete(id: UUID) async throws {
         entries.removeAll { $0.id == id }
+    }
+}
+
+@MainActor
+private final class MockSoundFeedbackService: DictationSoundFeedbackService {
+    private(set) var recordingStartedVolumes: [Double] = []
+    private(set) var processingStartedVolumes: [Double] = []
+
+    func playRecordingStarted(volume: Double) {
+        recordingStartedVolumes.append(volume)
+    }
+
+    func playProcessingStarted(volume: Double) {
+        processingStartedVolumes.append(volume)
     }
 }
 

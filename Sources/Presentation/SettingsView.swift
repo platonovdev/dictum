@@ -26,6 +26,25 @@ public struct SettingsView: View {
                     Toggle(L10n.text("Paste recognized text at cursor", "Вставлять распознанный текст в позицию курсора"), isOn: $settingsViewModel.settings.autoPaste)
                     Toggle(L10n.text("Add a space after each dictation", "Добавлять пробел после каждой диктовки"), isOn: $settingsViewModel.settings.appendTrailingSpace)
                     Toggle(L10n.text("Show floating recording indicator", "Показывать плавающий индикатор записи"), isOn: $settingsViewModel.settings.showOverlay)
+                    VStack(alignment: .leading, spacing: 7) {
+                        LabeledContent(L10n.text("Interface sounds", "Звуки интерфейса")) {
+                            Text(soundVolumeLabel)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 10) {
+                            Image(systemName: soundVolumeSymbol)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+                            Slider(
+                                value: $settingsViewModel.settings.feedbackSoundVolume,
+                                in: 0...1,
+                                step: 0.05
+                            )
+                            .accessibilityLabel(L10n.text("Interface sound volume", "Громкость звуков интерфейса"))
+                            .accessibilityValue(soundVolumeLabel)
+                        }
+                    }
                     Toggle(L10n.text("Launch Dictator at login", "Запускать Диктатор при входе в систему"), isOn: $settingsViewModel.settings.launchAtLogin)
                 }
 
@@ -137,6 +156,18 @@ public struct SettingsView: View {
                     .filter { !$0.isEmpty }
             }
         )
+    }
+
+    private var soundVolumeLabel: String {
+        "\(Int((settingsViewModel.settings.feedbackSoundVolume * 100).rounded()))%"
+    }
+
+    private var soundVolumeSymbol: String {
+        switch settingsViewModel.settings.feedbackSoundVolume {
+        case ...0.001: "speaker.slash.fill"
+        case ..<0.5: "speaker.wave.1.fill"
+        default: "speaker.wave.2.fill"
+        }
     }
 
     private func permissionRow(title: String, status: PermissionStatus, permission: PermissionKind) -> some View {

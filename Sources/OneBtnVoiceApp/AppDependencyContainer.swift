@@ -16,6 +16,7 @@ final class AppDependencyContainer {
     let hotkeyService = QuartzHotkeyService()
     let launchAtLoginService = SystemLaunchAtLoginService()
     let audioArchive = FileSystemDictationAudioArchive()
+    let soundFeedbackService = SynthesizedDictationSoundFeedbackService()
 
     let loadSettingsUseCase: LoadSettingsUseCase
     let updateSettingsUseCase: UpdateSettingsUseCase
@@ -52,7 +53,8 @@ final class AppDependencyContainer {
             permissionService: permissionService,
             settingsStore: settingsStore,
             historyStore: historyStore,
-            audioArchive: audioArchive
+            audioArchive: audioArchive,
+            soundFeedbackService: soundFeedbackService
         )
 
         overlayViewModel = OverlayViewModel(coordinator: coordinator)

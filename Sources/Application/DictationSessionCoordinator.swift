@@ -28,6 +28,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     private let settingsStore: SettingsStore
     private let historyStore: DictationHistoryStore
     private let audioArchive: DictationAudioArchive
+    private let soundFeedbackService: DictationSoundFeedbackService?
     private let logger = Logger(subsystem: "com.dictator.app", category: "dictation-session")
 
     private let stateBroadcast = AsyncBroadcast<DictationSessionState>()
@@ -57,7 +58,8 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         permissionService: PermissionService,
         settingsStore: SettingsStore,
         historyStore: DictationHistoryStore,
-        audioArchive: DictationAudioArchive = FileSystemDictationAudioArchive()
+        audioArchive: DictationAudioArchive = FileSystemDictationAudioArchive(),
+        soundFeedbackService: DictationSoundFeedbackService? = nil
     ) {
         self.transcriptionEngine = transcriptionEngine
         self.audioCaptureService = audioCaptureService
@@ -66,6 +68,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         self.settingsStore = settingsStore
         self.historyStore = historyStore
         self.audioArchive = audioArchive
+        self.soundFeedbackService = soundFeedbackService
     }
 
     public func makeStateStream() -> AsyncStream<DictationSessionState> {
@@ -179,6 +182,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             recordingStartedAt = startedAt
             logger.info("Recording started for session \(sessionID.uuidString, privacy: .public)")
             transition(to: .recording(startedAt: startedAt))
+            soundFeedbackService?.playRecordingStarted(volume: settings.feedbackSoundVolume)
             forwardLevelEvents(for: sessionID)
 
             // Never make a thought wait for a model wake-up. If idle memory
@@ -213,6 +217,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             guard isCurrent(sessionID) else {
                 return
             }
+            soundFeedbackService?.playProcessingStarted(volume: settings.feedbackSoundVolume)
             logger.info(
                 "Recording finalized for session \(sessionID.uuidString, privacy: .public), duration \(capturedAudio.duration, format: .fixed(precision: 2))s"
             )

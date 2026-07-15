@@ -46,6 +46,14 @@ public extension AudioCaptureService {
     func recoverPendingRecordings() async -> [CapturedAudio] { [] }
 }
 
+/// Short, optional audio cues that reinforce the visible dictation state.
+/// A volume of zero is the accessible, fully silent mode.
+@MainActor
+public protocol DictationSoundFeedbackService {
+    func playRecordingStarted(volume: Double)
+    func playProcessingStarted(volume: Double)
+}
+
 @MainActor
 public protocol GlobalHotkeyService: AnyObject {
     func startListening(
