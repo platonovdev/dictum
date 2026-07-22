@@ -46,8 +46,14 @@ public final class QuartzHotkeyService: GlobalHotkeyService {
 
         globalMonitor = nil
         localMonitor = nil
+        if let spaceLatchTap {
+            CGEvent.tapEnable(tap: spaceLatchTap, enable: false)
+        }
         if let spaceLatchTapSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), spaceLatchTapSource, .commonModes)
+        }
+        if let spaceLatchTap {
+            CFMachPortInvalidate(spaceLatchTap)
         }
         spaceLatchTapSource = nil
         spaceLatchTap = nil
@@ -129,13 +135,7 @@ public final class QuartzHotkeyService: GlobalHotkeyService {
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: mask,
-            callback: { _, type, event, userInfo in
-                guard type == .keyDown, let userInfo else {
-                    return Unmanaged.passUnretained(event)
-                }
-                let state = Unmanaged<HotkeyEventTapState>.fromOpaque(userInfo).takeUnretainedValue()
-                return state.consumeSpaceLatchIfNeeded(event) ? nil : Unmanaged.passUnretained(event)
-            },
+            callback: dictatorSpaceLatchEventTapCallback,
             userInfo: statePointer
         ) else {
             return
@@ -149,7 +149,24 @@ public final class QuartzHotkeyService: GlobalHotkeyService {
     }
 }
 
-private final class HotkeyEventTapState: @unchecked Sendable {
+/// A plain C callback must not inherit `QuartzHotkeyService`'s `MainActor`.
+/// Quartz invokes event taps outside Swift's executor model even when their
+/// run-loop source is installed on the main thread. An actor-isolated closure
+/// here can crash inside `swift_task_isMainExecutorImpl` before its body runs.
+func dictatorSpaceLatchEventTapCallback(
+    _ proxy: CGEventTapProxy,
+    _ type: CGEventType,
+    _ event: CGEvent,
+    _ userInfo: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    guard type == .keyDown, let userInfo else {
+        return Unmanaged.passUnretained(event)
+    }
+    let state = Unmanaged<HotkeyEventTapState>.fromOpaque(userInfo).takeUnretainedValue()
+    return state.consumeSpaceLatchIfNeeded(event) ? nil : Unmanaged.passUnretained(event)
+}
+
+final class HotkeyEventTapState: @unchecked Sendable {
     private let lock = NSLock()
     private var capturesSpace = false
     private var rightCommandHeld = false
