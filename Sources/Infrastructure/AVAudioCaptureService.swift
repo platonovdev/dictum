@@ -5,7 +5,13 @@ import Foundation
 
 @MainActor
 public final class AVAudioCaptureService: AudioCaptureService {
-    private let audioEngine = AVAudioEngine()
+    // Audio input formats can change while this menu bar app stays alive
+    // (AirPods, USB microphones, displays, and aggregate devices are common
+    // examples). A long-lived AVAudioEngine keeps the format it discovered
+    // when its input node was first accessed, which can make installTap raise
+    // an Objective-C exception after the route changes. Rebuild the engine for
+    // every recording so its graph always reflects the current device.
+    private var audioEngine = AVAudioEngine()
     private let tapSink = TapSink()
     private let fileManager: FileManager
     private let pendingDirectoryURL: URL
@@ -37,10 +43,11 @@ public final class AVAudioCaptureService: AudioCaptureService {
     }
 
     public func startRecording() async throws {
-        guard !audioEngine.isRunning else {
+        guard outputURL == nil, !audioEngine.isRunning else {
             throw AppError.audioCaptureFailed("A recording session is already active.")
         }
 
+        audioEngine = AVAudioEngine()
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
@@ -63,7 +70,11 @@ public final class AVAudioCaptureService: AudioCaptureService {
         inputNode.installTap(
             onBus: 0,
             bufferSize: 2048,
-            format: format,
+            // nil asks AVFoundation to use the input node's current native
+            // output format. Passing the previously queried format here can
+            // race a route change and terminate the recording task with a
+            // hardware/client format mismatch exception.
+            format: nil,
             block: tapSink.makeTapHandler()
         )
 
