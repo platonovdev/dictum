@@ -143,7 +143,9 @@ public struct HistoryView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    if entry.status == .failed, let detail = entry.statusDetail, !detail.isEmpty {
+                    if entry.status == .failed,
+                       let detail = L10n.historyDetail(for: entry),
+                       !detail.isEmpty {
                         Text(detail)
                             .font(.footnote)
                             .foregroundStyle(.red)
@@ -266,7 +268,7 @@ public struct HistoryView: View {
     }
 
     private func errorText(for entry: DictationHistoryEntry) -> String {
-        if let detail = entry.statusDetail, !detail.isEmpty {
+        if let detail = L10n.historyDetail(for: entry), !detail.isEmpty {
             return detail
         }
 

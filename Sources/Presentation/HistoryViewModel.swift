@@ -95,7 +95,8 @@ public final class HistoryViewModel: ObservableObject {
                     : L10n.text("Recognition completed.", "Распознавание завершено.")
                 errorMessage = nil
             case .emptyTranscript, .failed:
-                errorMessage = updated.statusDetail ?? L10n.text("Recognition produced no text. The recording is still saved.", "Текст не распознан. Аудиозапись сохранена.")
+                errorMessage = L10n.historyDetail(for: updated)
+                    ?? L10n.text("Recognition produced no text. The recording is still saved.", "Текст не распознан. Аудиозапись сохранена.")
                 statusMessage = nil
             }
         }

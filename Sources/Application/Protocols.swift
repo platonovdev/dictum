@@ -35,6 +35,9 @@ public protocol CancellableSpeechTranscriptionEngine: SpeechTranscriptionEngine 
 public protocol AudioCaptureService {
     func makeMeterStream() -> AsyncStream<AudioMeterFrame>
     func startRecording() async throws
+    /// Excludes a short, app-generated output cue from the saved microphone
+    /// stream without delaying the visual start of dictation.
+    func suppressSystemFeedback(for duration: TimeInterval)
     func stopRecording() async throws -> CapturedAudio
     func cancelRecording() async
     /// Returns complete recordings left behind by an interrupted app process.
@@ -43,6 +46,7 @@ public protocol AudioCaptureService {
 }
 
 public extension AudioCaptureService {
+    func suppressSystemFeedback(for duration: TimeInterval) {}
     func recoverPendingRecordings() async -> [CapturedAudio] { [] }
 }
 
@@ -108,11 +112,15 @@ public protocol DictationAudioArchive: Sendable {
     func archive(_ capturedAudio: CapturedAudio, for entryID: UUID) async throws -> ArchivedAudio
     func createRetainedAudioCopy(from archivedAudio: ArchivedAudio, for entryID: UUID) async throws -> ArchivedAudio
     func loadArchivedAudio(at path: String, duration: TimeInterval) async throws -> CapturedAudio
+    /// Finds durable source recordings that were moved out of Pending before
+    /// their history transaction could commit.
+    func recoverArchivedRecordings() async -> [ArchivedAudio]
     func deleteArchivedAudio(at path: String) async
     func cleanupUnreferencedAudio(keepingPaths: Set<String>, olderThan cutoff: Date) async
 }
 
 public extension DictationAudioArchive {
+    func recoverArchivedRecordings() async -> [ArchivedAudio] { [] }
     func cleanupUnreferencedAudio(keepingPaths: Set<String>, olderThan cutoff: Date) async {}
 }
 

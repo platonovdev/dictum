@@ -23,7 +23,10 @@ func overlayViewModelShowsStatusTextOutsideRecording() async {
     await waitUntil { viewModel.visualState == .error }
 
     #expect(viewModel.visualState == .error)
-    #expect(viewModel.statusText == "Audio capture failed: boom")
+    #expect(
+        viewModel.statusText
+            == AppError.audioCaptureFailed("boom").userFacingDescription
+    )
 
     coordinator.sendState(.recording(startedAt: Date().addingTimeInterval(-2)))
     await waitUntil { viewModel.visualState == .recording && viewModel.statusText == nil }

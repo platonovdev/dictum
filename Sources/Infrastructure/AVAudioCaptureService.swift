@@ -32,6 +32,10 @@ public final class AVAudioCaptureService: AudioCaptureService {
         tapSink.makeMeterStream()
     }
 
+    public func suppressSystemFeedback(for duration: TimeInterval) {
+        tapSink.suppressSystemFeedback(for: duration)
+    }
+
     public func startRecording() async throws {
         guard !audioEngine.isRunning else {
             throw AppError.audioCaptureFailed("A recording session is already active.")
@@ -183,6 +187,7 @@ private final class TapSink: @unchecked Sendable {
     private var writtenFrames: AVAudioFramePosition = 0
     private var sampleRate: Double = 0
     private var writeError: Error?
+    private var suppressInputUntilUptime: TimeInterval = 0
 
     func makeMeterStream() -> AsyncStream<AudioMeterFrame> {
         // Meter consumers only need the freshest sample. Dropping stale frames
@@ -196,6 +201,7 @@ private final class TapSink: @unchecked Sendable {
         writtenFrames = 0
         self.sampleRate = sampleRate
         writeError = nil
+        suppressInputUntilUptime = 0
         meterAnalyzer.reset()
         lock.unlock()
     }
@@ -206,6 +212,18 @@ private final class TapSink: @unchecked Sendable {
             lock.unlock()
             return
         }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        if now < suppressInputUntilUptime {
+            lock.unlock()
+            meterBroadcast.yield(.silent)
+            return
+        }
+        if suppressInputUntilUptime > 0 {
+            suppressInputUntilUptime = 0
+            // The app's cue must not calibrate the speech/noise floor either.
+            meterAnalyzer.reset()
+        }
         do {
             try outputFile.write(from: buffer)
             writtenFrames += AVAudioFramePosition(buffer.frameLength)
@@ -215,6 +233,18 @@ private final class TapSink: @unchecked Sendable {
         let meterFrame = meterAnalyzer.analyze(buffer: buffer)
         lock.unlock()
         meterBroadcast.yield(meterFrame)
+    }
+
+    func suppressSystemFeedback(for duration: TimeInterval) {
+        guard duration.isFinite, duration > 0 else {
+            return
+        }
+        lock.lock()
+        suppressInputUntilUptime = max(
+            suppressInputUntilUptime,
+            ProcessInfo.processInfo.systemUptime + duration
+        )
+        lock.unlock()
     }
 
     func makeTapHandler() -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
@@ -231,6 +261,7 @@ private final class TapSink: @unchecked Sendable {
             writeError: writeError
         )
         outputFile = nil
+        suppressInputUntilUptime = 0
         meterAnalyzer.reset()
         lock.unlock()
         return result

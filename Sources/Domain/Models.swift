@@ -123,6 +123,19 @@ public enum DictationSoundTheme: String, Codable, CaseIterable, Sendable {
     case wood
     case sonar
     case bubble
+
+    /// Duration of the bundled opening cue. The recorder uses this to exclude
+    /// app-generated speaker output from the microphone file.
+    public var recordingCueDuration: TimeInterval {
+        switch self {
+        case .bubble:
+            0.236
+        case .softTap:
+            0.252
+        default:
+            0.4
+        }
+    }
 }
 
 public struct AppSettings: Codable, Equatable, Sendable {
@@ -676,6 +689,10 @@ public enum DictationSessionState: Equatable, Sendable {
 
 public extension AppError {
     var userFacingDescription: String {
+        if Locale.preferredLanguages.first?.lowercased().hasPrefix("ru") == true {
+            return russianUserFacingDescription
+        }
+
         switch self {
         case .permissionsMissing(let permissions):
             let names = permissions.map(\.displayName).joined(separator: ", ")
@@ -706,6 +723,46 @@ public extension AppError {
             return "The global hotkey could not be started."
         case .unsupportedPlatform:
             return "This app currently supports Apple Silicon on macOS only."
+        }
+    }
+
+    private var russianUserFacingDescription: String {
+        switch self {
+        case .permissionsMissing(let permissions):
+            let names = permissions.map { permission in
+                switch permission {
+                case .microphone: "микрофон"
+                case .accessibility: "универсальный доступ"
+                case .inputMonitoring: "мониторинг ввода"
+                }
+            }.joined(separator: ", ")
+            return "Не хватает разрешений: \(names)."
+        case .modelUnavailable:
+            return "Локальная модель Whisper пока не готова."
+        case .audioCaptureFailed:
+            return "Не удалось записать звук. Проверьте микрофон и попробуйте ещё раз."
+        case .transcriptionFailed:
+            return "Не удалось распознать запись. Аудио сохранено в истории — обработку можно повторить."
+        case .insertionFailed:
+            return "Не удалось вставить распознанный текст."
+        case .audioArchiveFailed:
+            return "Не удалось сохранить аудиозапись для повторной обработки."
+        case .historyPersistenceFailed:
+            return "Не удалось сохранить историю диктовок."
+        case .historyEntryNotFound:
+            return "Запись не найдена в истории."
+        case .archivedAudioUnavailable:
+            return "Сохранённая аудиозапись недоступна."
+        case .launchAtLoginFailed:
+            return "Не удалось изменить автозапуск приложения."
+        case .secureInputField:
+            return "Это защищённое поле. Текст скопирован в буфер обмена."
+        case .emptyTranscript:
+            return "Речь не распознана."
+        case .hotkeyUnavailable:
+            return "Не удалось включить глобальное сочетание клавиш."
+        case .unsupportedPlatform:
+            return "Приложение поддерживает только Mac с Apple Silicon."
         }
     }
 }

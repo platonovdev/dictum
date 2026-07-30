@@ -29,7 +29,8 @@ func startDictationTransitionsToPermissionErrorWhenPermissionsMissing() async {
             )
         ),
         settingsStore: MockSettingsStore(),
-        historyStore: MockHistoryStore()
+        historyStore: MockHistoryStore(),
+        audioArchive: MockArchive()
     )
 
     let states = coordinator.makeStateStream()
@@ -58,7 +59,8 @@ func startDictationRecordsImmediatelyWhileAnUnloadedModelWarmsInBackground() asy
             )
         ),
         settingsStore: MockSettingsStore(),
-        historyStore: MockHistoryStore()
+        historyStore: MockHistoryStore(),
+        audioArchive: MockArchive()
     )
 
     var states = coordinator.makeStateStream().makeAsyncIterator()
@@ -74,10 +76,11 @@ func startDictationRecordsImmediatelyWhileAnUnloadedModelWarmsInBackground() asy
 @MainActor
 func launchPreparationAndImmediateRecordingShareOneModelWarmup() async {
     let engine = DelayedPreparationSpeechEngine(delay: .milliseconds(120))
+    let insertionService = MockInsertionService()
     let coordinator = DictationSessionCoordinator(
         transcriptionEngine: engine,
         audioCaptureService: MockAudioCaptureService(),
-        insertionService: MockInsertionService(),
+        insertionService: insertionService,
         permissionService: MockPermissionService(
             snapshot: PermissionSnapshot(
                 microphone: .authorized,
@@ -86,7 +89,8 @@ func launchPreparationAndImmediateRecordingShareOneModelWarmup() async {
             )
         ),
         settingsStore: MockSettingsStore(),
-        historyStore: MockHistoryStore()
+        historyStore: MockHistoryStore(),
+        audioArchive: MockArchive()
     )
 
     let launchPreparation = Task { @MainActor in
@@ -97,6 +101,8 @@ func launchPreparationAndImmediateRecordingShareOneModelWarmup() async {
     await launchPreparation.value
 
     #expect(engine.preparationCount == 1)
+    await coordinator.stopDictation()
+    #expect(await insertionService.insertedText == "test transcript ")
 }
 
 @Test
@@ -106,12 +112,13 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     let historyStore = MockHistoryStore()
     let archive = MockArchive()
     let soundFeedback = MockSoundFeedbackService()
+    let audioCapture = MockAudioCaptureService()
     var settings = AppSettings.default
     settings.feedbackSoundVolume = 0.65
     settings.feedbackSoundTheme = .crystal
     let coordinator = DictationSessionCoordinator(
         transcriptionEngine: MockSpeechEngine(finalText: "hello world"),
-        audioCaptureService: MockAudioCaptureService(),
+        audioCaptureService: audioCapture,
         insertionService: insertionService,
         permissionService: MockPermissionService(
             snapshot: PermissionSnapshot(
@@ -140,6 +147,10 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
     #expect(await archive.deletedPaths == ["/tmp/original.wav"])
     #expect(soundFeedback.recordingStartedCues == [.init(theme: .crystal, volume: 0.65)])
     #expect(soundFeedback.processingStartedCues == [.init(theme: .crystal, volume: 0.65)])
+    #expect(
+        abs((audioCapture.suppressedFeedbackDurations.first ?? 0) - 0.43)
+            < 0.000_001
+    )
 }
 
 @Test
@@ -184,7 +195,8 @@ func stopDictationDoesNotDiscardAudioBecauseAdvisoryMeterMissedSpeech() async {
             )
         ),
         settingsStore: MockSettingsStore(),
-        historyStore: historyStore
+        historyStore: historyStore,
+        audioArchive: MockArchive()
     )
 
     await coordinator.prepare()
@@ -324,7 +336,8 @@ private func makeCoordinator(insertionService: MockInsertionService) -> Dictatio
             )
         ),
         settingsStore: MockSettingsStore(),
-        historyStore: MockHistoryStore()
+        historyStore: MockHistoryStore(),
+        audioArchive: MockArchive()
     )
 }
 
@@ -458,7 +471,7 @@ private final class DelayedPreparationSpeechEngine: SpeechTranscriptionEngine {
         _ capturedAudio: CapturedAudio,
         partialHandler: @escaping @Sendable (TranscriptChunk) -> Void
     ) async throws -> FinalTranscript {
-        FinalTranscript(text: "", duration: capturedAudio.duration, language: nil)
+        FinalTranscript(text: "test transcript", duration: capturedAudio.duration, language: "en")
     }
 }
 
@@ -482,6 +495,7 @@ private final class FailingSpeechEngine: SpeechTranscriptionEngine {
 @MainActor
 final class MockAudioCaptureService: AudioCaptureService {
     private let meterFrames: [AudioMeterFrame]
+    private(set) var suppressedFeedbackDurations: [TimeInterval] = []
 
     init(
         meterFrames: [AudioMeterFrame] = Array(
@@ -507,6 +521,10 @@ final class MockAudioCaptureService: AudioCaptureService {
     }
 
     func startRecording() async throws {}
+
+    func suppressSystemFeedback(for duration: TimeInterval) {
+        suppressedFeedbackDurations.append(duration)
+    }
 
     func stopRecording() async throws -> CapturedAudio {
         let url = FileManager.default.temporaryDirectory

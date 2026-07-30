@@ -112,7 +112,13 @@ func sqliteHistoryMigratesLegacyEntriesAndSurvivesReopen() async throws {
 @Test
 @MainActor
 func fileSystemArchiveCopiesLoadsAndDeletesAudio() async throws {
-    let archive = FileSystemDictationAudioArchive()
+    let archiveDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Dictator-Archive-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: archiveDirectory) }
+    let archive = FileSystemDictationAudioArchive(
+        fileManager: .default,
+        archiveDirectoryURL: archiveDirectory
+    )
     let sourceURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("wav")
@@ -141,7 +147,13 @@ func fileSystemArchiveCopiesLoadsAndDeletesAudio() async throws {
 @Test
 @MainActor
 func retainedCompressionKeepsApproximateDuration() async throws {
-    let archive = FileSystemDictationAudioArchive()
+    let archiveDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Dictator-Archive-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: archiveDirectory) }
+    let archive = FileSystemDictationAudioArchive(
+        fileManager: .default,
+        archiveDirectoryURL: archiveDirectory
+    )
     let sourceURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("wav")

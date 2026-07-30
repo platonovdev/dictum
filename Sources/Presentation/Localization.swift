@@ -1,3 +1,4 @@
+import Domain
 import Foundation
 
 enum L10n {
@@ -23,5 +24,29 @@ enum L10n {
             return few
         }
         return many
+    }
+
+    static func historyDetail(for entry: DictationHistoryEntry) -> String? {
+        guard isRussian else {
+            return entry.statusDetail
+        }
+        if entry.status == .emptyTranscript {
+            return "Текст не распознан. Аудиозапись сохранена."
+        }
+        guard entry.status == .failed else {
+            return entry.statusDetail
+        }
+        switch entry.failureStage {
+        case .audioCapture:
+            return "Запись была прервана. Сохранённое аудио можно обработать повторно."
+        case .transcription:
+            return "Не удалось распознать запись. Сохранённое аудио можно обработать повторно."
+        case .insertion:
+            return "Не удалось вставить текст. Распознанный текст сохранён в истории."
+        case .persistence:
+            return "Не удалось полностью сохранить результат."
+        case nil:
+            return "Не удалось завершить диктовку."
+        }
     }
 }
