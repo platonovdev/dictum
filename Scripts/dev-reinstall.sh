@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_PATH="/Applications/Dictum.app"
+APP_PATH="/Applications/Dictator.app"
 APP_BUNDLE_ID="com.dictum.app"
 
 echo "Stopping running app if needed..."

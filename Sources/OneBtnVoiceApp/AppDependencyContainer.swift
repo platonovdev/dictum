@@ -6,14 +6,17 @@ import Presentation
 @MainActor
 final class AppDependencyContainer {
     let settingsStore = UserDefaultsSettingsStore()
-    let historyStore = UserDefaultsDictationHistoryStore()
+    let historyStore = SQLiteDictationHistoryStore()
     let permissionService = SystemPermissionService()
     let audioCaptureService = AVAudioCaptureService()
     // Handy's whisper.cpp + Metal execution path is the default local engine.
-    let transcriptionEngine = WhisperCppTranscriptionEngine()
+    // Native Whisper/Metal work lives in a supervised helper so a decoder
+    // crash or hang cannot freeze the menu bar app or lose the recording.
+    let transcriptionEngine = IsolatedWhisperTranscriptionEngine()
     let hotkeyService = QuartzHotkeyService()
     let launchAtLoginService = SystemLaunchAtLoginService()
     let audioArchive = FileSystemDictationAudioArchive()
+    let soundFeedbackService = BundledDictationSoundFeedbackService()
 
     let loadSettingsUseCase: LoadSettingsUseCase
     let updateSettingsUseCase: UpdateSettingsUseCase
@@ -50,14 +53,16 @@ final class AppDependencyContainer {
             permissionService: permissionService,
             settingsStore: settingsStore,
             historyStore: historyStore,
-            audioArchive: audioArchive
+            audioArchive: audioArchive,
+            soundFeedbackService: soundFeedbackService
         )
 
         overlayViewModel = OverlayViewModel(coordinator: coordinator)
         settingsViewModel = SettingsViewModel(
             loadSettingsUseCase: loadSettingsUseCase,
             updateSettingsUseCase: updateSettingsUseCase,
-            launchAtLoginService: launchAtLoginService
+            launchAtLoginService: launchAtLoginService,
+            soundFeedbackService: soundFeedbackService
         )
         permissionsViewModel = PermissionsViewModel(
             permissionService: permissionService,

@@ -1,4 +1,5 @@
 #if canImport(XCTest)
+import AVFoundation
 import Application
 import Domain
 import Foundation
@@ -167,21 +168,201 @@ final class RecoveryFlowXCTests: XCTestCase {
     }
 
     @MainActor
+    func testColdLaunchPreparationDoesNotOverwriteAnActiveRecording() async throws {
+        let history = RecoveryHistoryStore()
+        let archive = try RecoveryArchive()
+        defer { archive.removeTestDirectory() }
+        let insertion = RecoveryTrackingInsertionService()
+        let engine = SlowRecoverySpeechEngine()
+        let coordinator = DictationSessionCoordinator(
+            transcriptionEngine: engine,
+            audioCaptureService: RecoveryAudioCapture(),
+            insertionService: insertion,
+            permissionService: RecoveryPermissionService(),
+            settingsStore: RecoverySettingsStore(settings: .default),
+            historyStore: history,
+            audioArchive: archive
+        )
+
+        let preparation = Task { @MainActor in
+            await coordinator.prepare()
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        await coordinator.startDictation()
+        await preparation.value
+        await coordinator.stopDictation()
+
+        let insertedText = await insertion.insertedText()
+        XCTAssertEqual(insertedText, "Cold launch survives ")
+    }
+
+    @MainActor
+    func testPendingRecordingReferencedByHistoryIsNeverDeletedAsDuplicate() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Dictator-Pending-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let entryID = UUID()
+        let pendingURL = directory.appendingPathComponent("\(entryID.uuidString).wav")
+        try writeSilentRecoveryAudio(to: pendingURL)
+        let entry = DictationHistoryEntry.make(
+            id: entryID,
+            startedAt: Date(),
+            transcript: "",
+            duration: 1,
+            language: nil,
+            status: .failed,
+            statusDetail: "Interrupted",
+            audioArtifactPath: pendingURL.path,
+            failureStage: .audioCapture
+        )
+        let history = RecoveryHistoryStore(entries: [entry])
+        let archive = try RecoveryArchive()
+        defer { archive.removeTestDirectory() }
+        let coordinator = makeCoordinator(
+            engine: RecoverySpeechEngine(result: .success("Unused")),
+            settings: .default,
+            history: history,
+            archive: archive,
+            audioCapture: PendingRecoveryAudioCapture(
+                recording: CapturedAudio(fileURL: pendingURL, duration: 1)
+            )
+        )
+
+        await coordinator.prepare()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pendingURL.path))
+        XCTAssertEqual(history.allEntries().first?.audioArtifactPath, pendingURL.path)
+    }
+
+    @MainActor
+    func testArchivedWAVWithoutHistoryIsRecoveredOnLaunch() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Dictator-Archive-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let entryID = UUID()
+        let archivedURL = directory.appendingPathComponent("\(entryID.uuidString).wav")
+        try writeSilentRecoveryAudio(to: archivedURL)
+        let history = RecoveryHistoryStore()
+        let archive = FileSystemDictationAudioArchive(
+            fileManager: .default,
+            archiveDirectoryURL: directory
+        )
+        let coordinator = DictationSessionCoordinator(
+            transcriptionEngine: RecoverySpeechEngine(result: .success("Unused")),
+            audioCaptureService: RecoveryAudioCapture(),
+            insertionService: RecoveryInsertionService(),
+            permissionService: RecoveryPermissionService(),
+            settingsStore: RecoverySettingsStore(settings: .default),
+            historyStore: history,
+            audioArchive: archive
+        )
+
+        await coordinator.prepare()
+
+        let recovered = try XCTUnwrap(history.allEntries().first)
+        XCTAssertEqual(recovered.id, entryID)
+        XCTAssertEqual(
+            recovered.audioArtifactPath.map {
+                URL(fileURLWithPath: $0).standardizedFileURL.path
+            },
+            archivedURL.standardizedFileURL.path
+        )
+        XCTAssertEqual(recovered.failureStage, .transcription)
+        XCTAssertTrue(recovered.isRetryable)
+    }
+
+    @MainActor
+    func testRecoveryRowCommitsBeforeTranscriptionStarts() async throws {
+        let history = RecoveryHistoryStore()
+        let archive = try RecoveryArchive()
+        defer { archive.removeTestDirectory() }
+        let engine = RecoveryOrderingSpeechEngine(history: history)
+        let coordinator = makeCoordinator(
+            engine: engine,
+            settings: .default,
+            history: history,
+            archive: archive
+        )
+
+        await coordinator.prepare()
+        await coordinator.startDictation()
+        await coordinator.stopDictation()
+
+        XCTAssertTrue(engine.sawDurableRecoveryEntry)
+        XCTAssertEqual(history.allEntries().count, 1)
+        XCTAssertEqual(history.allEntries().first?.status, .inserted)
+    }
+
+    @MainActor
     private func makeCoordinator(
         engine: any SpeechTranscriptionEngine,
         settings: AppSettings,
         history: RecoveryHistoryStore,
-        archive: RecoveryArchive
+        archive: any DictationAudioArchive,
+        audioCapture: any AudioCaptureService = RecoveryAudioCapture()
     ) -> DictationSessionCoordinator {
         DictationSessionCoordinator(
             transcriptionEngine: engine,
-            audioCaptureService: RecoveryAudioCapture(),
+            audioCaptureService: audioCapture,
             insertionService: RecoveryInsertionService(),
             permissionService: RecoveryPermissionService(),
             settingsStore: RecoverySettingsStore(settings: settings),
             historyStore: history,
             audioArchive: archive
         )
+    }
+}
+
+@MainActor
+private final class SlowRecoverySpeechEngine: SpeechTranscriptionEngine {
+    func prepareModel(
+        named modelIdentifier: String,
+        progressHandler: @escaping @Sendable (ModelPreparationStatus) -> Void
+    ) async throws {
+        try await Task.sleep(for: .milliseconds(120))
+    }
+
+    func unloadModel() async {}
+
+    func transcribe(
+        _ capturedAudio: CapturedAudio,
+        partialHandler: @escaping @Sendable (TranscriptChunk) -> Void
+    ) async throws -> FinalTranscript {
+        FinalTranscript(text: "Cold launch survives", duration: capturedAudio.duration, language: "en")
+    }
+}
+
+@MainActor
+private final class RecoveryOrderingSpeechEngine: SpeechTranscriptionEngine {
+    private let history: RecoveryHistoryStore
+    private(set) var sawDurableRecoveryEntry = false
+
+    init(history: RecoveryHistoryStore) {
+        self.history = history
+    }
+
+    func prepareModel(
+        named modelIdentifier: String,
+        progressHandler: @escaping @Sendable (ModelPreparationStatus) -> Void
+    ) async throws {}
+
+    func unloadModel() async {}
+
+    func transcribe(
+        _ capturedAudio: CapturedAudio,
+        partialHandler: @escaping @Sendable (TranscriptChunk) -> Void
+    ) async throws -> FinalTranscript {
+        sawDurableRecoveryEntry = history.allEntries().contains { entry in
+            entry.status == .failed
+                && entry.failureStage == .transcription
+                && entry.audioArtifactPath == capturedAudio.fileURL.path
+                && entry.isRetryable
+        }
+        return FinalTranscript(text: "Committed first", duration: capturedAudio.duration, language: "en")
     }
 }
 
@@ -275,6 +456,24 @@ private final class RecoveryAudioCapture: AudioCaptureService {
 }
 
 @MainActor
+private final class PendingRecoveryAudioCapture: AudioCaptureService {
+    private let recording: CapturedAudio
+
+    init(recording: CapturedAudio) {
+        self.recording = recording
+    }
+
+    func makeMeterStream() -> AsyncStream<AudioMeterFrame> {
+        AsyncStream { $0.finish() }
+    }
+
+    func startRecording() async throws {}
+    func stopRecording() async throws -> CapturedAudio { recording }
+    func cancelRecording() async {}
+    func recoverPendingRecordings() async -> [CapturedAudio] { [recording] }
+}
+
+@MainActor
 private final class RecoveryHistoryStore: DictationHistoryStore {
     private var entries: [DictationHistoryEntry]
 
@@ -317,6 +516,19 @@ private struct RecoveryPermissionService: PermissionService {
 
 private actor RecoveryInsertionService: TextInsertionService {
     func insert(text: String) async -> InsertionResult { .success }
+}
+
+private actor RecoveryTrackingInsertionService: TextInsertionService {
+    private var text: String?
+
+    func insert(text: String) async -> InsertionResult {
+        self.text = text
+        return .success
+    }
+
+    func insertedText() -> String? {
+        text
+    }
 }
 
 private final class RecoveryArchive: DictationAudioArchive, @unchecked Sendable {
@@ -369,5 +581,20 @@ private final class RecoveryArchive: DictationAudioArchive, @unchecked Sendable 
     func removeTestDirectory() {
         try? FileManager.default.removeItem(at: directoryURL)
     }
+}
+
+private func writeSilentRecoveryAudio(to url: URL) throws {
+    let format = try XCTUnwrap(
+        AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)
+    )
+    let file = try AVAudioFile(forWriting: url, settings: format.settings)
+    let buffer = try XCTUnwrap(
+        AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000)
+    )
+    buffer.frameLength = 48_000
+    if let channel = buffer.floatChannelData?[0] {
+        channel.initialize(repeating: 0, count: 48_000)
+    }
+    try file.write(from: buffer)
 }
 #endif

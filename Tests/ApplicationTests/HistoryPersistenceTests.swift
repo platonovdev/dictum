@@ -61,8 +61,64 @@ func historyStoreSupportsStreamUpdateAndDelete() async throws {
 
 @Test
 @MainActor
+func sqliteHistoryMigratesLegacyEntriesAndSurvivesReopen() async throws {
+    let suiteName = "com.dictator.sqlite-tests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let databaseDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Dictator-SQLite-\(UUID().uuidString)", isDirectory: true)
+    let databaseURL = databaseDirectory.appendingPathComponent("History.sqlite3")
+    defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+
+    let legacyStore = UserDefaultsDictationHistoryStore(defaults: defaults)
+    let legacyEntry = DictationHistoryEntry.make(
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        transcript: "legacy survives",
+        duration: 2,
+        language: "en",
+        status: .inserted
+    )
+    try await legacyStore.append(legacyEntry)
+
+    var store: SQLiteDictationHistoryStore? = SQLiteDictationHistoryStore(
+        databaseURL: databaseURL,
+        legacyStore: legacyStore
+    )
+    let migrated = try await store?.loadEntries()
+    #expect(migrated == [legacyEntry])
+
+    let newEntry = DictationHistoryEntry.make(
+        startedAt: Date(timeIntervalSince1970: 1_700_000_100),
+        transcript: "transactional row",
+        duration: 3,
+        language: "en",
+        status: .savedWithoutInsertion
+    )
+    try await store?.append(newEntry)
+    #expect(try await store?.loadEntries() == [newEntry, legacyEntry])
+    store = nil
+
+    let reopened = SQLiteDictationHistoryStore(
+        databaseURL: databaseURL,
+        legacyStore: legacyStore
+    )
+    let afterReopen = try await reopened.loadEntries()
+    #expect(afterReopen == [newEntry, legacyEntry])
+    #expect(try await legacyStore.loadEntries() == [legacyEntry])
+}
+
+@Test
+@MainActor
 func fileSystemArchiveCopiesLoadsAndDeletesAudio() async throws {
-    let archive = FileSystemDictationAudioArchive()
+    let archiveDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Dictator-Archive-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: archiveDirectory) }
+    let archive = FileSystemDictationAudioArchive(
+        fileManager: .default,
+        archiveDirectoryURL: archiveDirectory
+    )
     let sourceURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("wav")
@@ -91,7 +147,13 @@ func fileSystemArchiveCopiesLoadsAndDeletesAudio() async throws {
 @Test
 @MainActor
 func retainedCompressionKeepsApproximateDuration() async throws {
-    let archive = FileSystemDictationAudioArchive()
+    let archiveDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("Dictator-Archive-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: archiveDirectory) }
+    let archive = FileSystemDictationAudioArchive(
+        fileManager: .default,
+        archiveDirectoryURL: archiveDirectory
+    )
     let sourceURL = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("wav")

@@ -1,3 +1,4 @@
+import AVFoundation
 import Domain
 import Foundation
 
@@ -5,14 +6,22 @@ public final class FileSystemDictationAudioArchive: DictationAudioArchive, @unch
     private let fileManager: FileManager
     private let archiveDirectoryURL: URL
 
-    public init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
+    public convenience init(fileManager: FileManager = .default) {
+        let applicationSupportURL = fileManager.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? fileManager.temporaryDirectory
+        self.init(
+            fileManager: fileManager,
+            archiveDirectoryURL: applicationSupportURL
+                .appendingPathComponent("OneBtnVoice", isDirectory: true)
+                .appendingPathComponent("Dictations", isDirectory: true)
+        )
+    }
 
-        let applicationSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fileManager.temporaryDirectory
-        archiveDirectoryURL = applicationSupportURL
-            .appendingPathComponent("OneBtnVoice", isDirectory: true)
-            .appendingPathComponent("Dictations", isDirectory: true)
+    public init(fileManager: FileManager, archiveDirectoryURL: URL) {
+        self.fileManager = fileManager
+        self.archiveDirectoryURL = archiveDirectoryURL
     }
 
     public func archive(_ capturedAudio: CapturedAudio, for entryID: UUID) async throws -> ArchivedAudio {
@@ -44,6 +53,36 @@ public final class FileSystemDictationAudioArchive: DictationAudioArchive, @unch
         }
 
         return CapturedAudio(fileURL: url, duration: duration)
+    }
+
+    public func recoverArchivedRecordings() async -> [ArchivedAudio] {
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: archiveDirectoryURL,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return files.compactMap { url in
+            // Retained M4A files are always created after a durable source WAV.
+            // Only source WAVs can represent the archive/history crash window.
+            guard url.pathExtension.lowercased() == "wav",
+                  let values = try? url.resourceValues(
+                    forKeys: [.fileSizeKey, .isRegularFileKey]
+                  ),
+                  values.isRegularFile == true,
+                  (values.fileSize ?? 0) > 44,
+                  let file = try? AVAudioFile(forReading: url),
+                  file.length > 0,
+                  file.processingFormat.sampleRate > 0 else {
+                return nil
+            }
+            return ArchivedAudio(
+                fileURL: url,
+                duration: Double(file.length) / file.processingFormat.sampleRate
+            )
+        }
     }
 
     public func createRetainedAudioCopy(from archivedAudio: ArchivedAudio, for entryID: UUID) async throws -> ArchivedAudio {

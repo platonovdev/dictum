@@ -1,0 +1,3 @@
+"CFBundleName" = "Dictator";
+"CFBundleDisplayName" = "Dictator";
+"NSMicrophoneUsageDescription" = "Dictator needs microphone access to transcribe speech locally.";

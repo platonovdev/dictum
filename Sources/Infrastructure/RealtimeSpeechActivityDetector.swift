@@ -61,7 +61,10 @@ struct RealtimeSpeechActivityDetector {
             (snrScore * 0.45) +
             (midScore * 0.35) +
             (highScore * 0.20) -
-            (lowDominancePenalty * 0.18) -
+            // Steady fan/desk hum can be loud but is overwhelmingly low-band.
+            // A strong spectral penalty keeps it from latching the speech
+            // state before the adaptive floor has had time to settle.
+            (lowDominancePenalty * 0.50) -
             (hissPenalty * 0.10) -
             (transientPenalty * 0.17)
 

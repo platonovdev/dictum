@@ -70,25 +70,28 @@ public final class OverlayViewModel: ObservableObject {
             stopWaveformTicker()
             resetWaveform()
         case .recording(let startedAt, let isHandsFree):
+            let isContinuingRecording = isVisible && visualState == .recording
             isVisible = true
             visualState = .recording
             isLockedMode = isHandsFree
             statusText = nil
-            resetWaveform()
-            startElapsedTimer(from: startedAt)
-            startWaveformTicker()
+            if !isContinuingRecording {
+                resetWaveform()
+                startElapsedTimer(from: startedAt)
+                startWaveformTicker()
+            }
         case .transcribing:
             isVisible = true
             visualState = .processing
             isLockedMode = false
-            statusText = "Transcribing..."
+            statusText = nil
             stopElapsedTimer()
             stopWaveformTicker()
         case .inserting:
             isVisible = true
             visualState = .processing
             isLockedMode = false
-            statusText = "Inserting..."
+            statusText = nil
             stopElapsedTimer()
             stopWaveformTicker()
         case .error(let error):

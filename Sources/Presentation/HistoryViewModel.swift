@@ -59,20 +59,20 @@ public final class HistoryViewModel: ObservableObject {
     public func copyTranscript(for entry: DictationHistoryEntry) {
         let transcript = entry.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else {
-            statusMessage = "This item has no transcript to copy."
+            statusMessage = L10n.text("This item has no text to copy.", "В этой записи нет текста для копирования.")
             return
         }
 
         Task { @MainActor in
             await clipboardWriter.copy(text: transcript)
-            statusMessage = "Transcript copied to clipboard."
+            statusMessage = L10n.text("Text copied to clipboard.", "Текст скопирован в буфер обмена.")
             errorMessage = nil
         }
     }
 
     public func retry(_ entry: DictationHistoryEntry) {
         guard entry.isRetryable else {
-            statusMessage = "Retry is only available when archived audio still exists."
+            statusMessage = L10n.text("Retry is only available while the saved audio exists.", "Повтор возможен, пока сохранена аудиозапись.")
             return
         }
 
@@ -84,18 +84,19 @@ public final class HistoryViewModel: ObservableObject {
             await reload()
 
             guard let updated = entries.first(where: { $0.id == entry.id }) else {
-                errorMessage = "The history item disappeared during retry."
+                errorMessage = L10n.text("The history item disappeared during retry.", "Запись исчезла из истории во время повтора.")
                 statusMessage = nil
                 return
             }
             switch updated.status {
             case .inserted, .clipboardFallback, .savedWithoutInsertion:
                 statusMessage = updated.isRetryable
-                    ? "Retranscription completed. The recording remains available."
-                    : "Retranscription completed."
+                    ? L10n.text("Recognition completed. The recording remains available.", "Распознавание завершено. Аудиозапись сохранена.")
+                    : L10n.text("Recognition completed.", "Распознавание завершено.")
                 errorMessage = nil
             case .emptyTranscript, .failed:
-                errorMessage = updated.statusDetail ?? "Retranscription did not produce text. The recording is still saved."
+                errorMessage = L10n.historyDetail(for: updated)
+                    ?? L10n.text("Recognition produced no text. The recording is still saved.", "Текст не распознан. Аудиозапись сохранена.")
                 statusMessage = nil
             }
         }
@@ -108,7 +109,7 @@ public final class HistoryViewModel: ObservableObject {
         }
         guard let path = entry.audioArtifactPath,
               FileManager.default.fileExists(atPath: path) else {
-            errorMessage = "The saved recording is no longer available."
+            errorMessage = L10n.text("The saved recording is no longer available.", "Сохранённая аудиозапись больше недоступна.")
             statusMessage = nil
             return
         }
@@ -118,22 +119,22 @@ public final class HistoryViewModel: ObservableObject {
             let player = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
             player.prepareToPlay()
             guard player.play() else {
-                throw AppError.audioArchiveFailed("Playback could not start.")
+                throw AppError.audioArchiveFailed(L10n.text("Playback could not start.", "Не удалось начать воспроизведение."))
             }
             audioPlayer = player
             playingEntryID = entry.id
             errorMessage = nil
-            statusMessage = "Playing saved recording."
+            statusMessage = L10n.text("Playing saved recording.", "Воспроизводится сохранённая запись.")
             playbackTask = Task { @MainActor [weak self] in
                 while let self, self.audioPlayer?.isPlaying == true, !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(150))
                 }
                 guard !Task.isCancelled else { return }
                 self?.stopPlayback(clearMessage: false)
-                self?.statusMessage = "Playback finished."
+                self?.statusMessage = L10n.text("Playback finished.", "Воспроизведение завершено.")
             }
         } catch {
-            errorMessage = "Could not play the saved recording: \(error.localizedDescription)"
+            errorMessage = "\(L10n.text("Could not play the saved recording", "Не удалось воспроизвести сохранённую запись")): \(error.localizedDescription)"
             statusMessage = nil
         }
     }
@@ -144,7 +145,7 @@ public final class HistoryViewModel: ObservableObject {
         audioPlayer?.stop()
         audioPlayer = nil
         playingEntryID = nil
-        if clearMessage, statusMessage == "Playing saved recording." {
+        if clearMessage, statusMessage == L10n.text("Playing saved recording.", "Воспроизводится сохранённая запись.") {
             statusMessage = nil
         }
     }
@@ -159,10 +160,10 @@ public final class HistoryViewModel: ObservableObject {
             actionEntryID = nil
             await reload()
             if entries.contains(where: { $0.id == entry.id }) {
-                errorMessage = "The dictation could not be deleted."
+                errorMessage = L10n.text("The dictation could not be deleted.", "Не удалось удалить диктовку.")
                 statusMessage = nil
             } else {
-                statusMessage = "Dictation and its saved recording were deleted."
+                statusMessage = L10n.text("Dictation and its saved recording were deleted.", "Диктовка и сохранённая аудиозапись удалены.")
                 errorMessage = nil
             }
         }

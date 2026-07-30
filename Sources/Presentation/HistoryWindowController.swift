@@ -14,7 +14,7 @@ public final class HistoryWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Dictum History"
+        window.title = L10n.text("Dictator History", "История — Диктатор")
         window.isReleasedWhenClosed = false
         window.center()
         window.contentMinSize = NSSize(width: 620, height: 420)

@@ -13,6 +13,9 @@ func defaultSettingsFavorLocalAutopasteFlow() {
     #expect(AppSettings.default.appendTrailingSpace)
     #expect(AppSettings.default.modelMemoryPolicy == .unloadAfterFiveMinutes)
     #expect(AppSettings.default.audioRetention == .sevenDays)
+    #expect(AppSettings.default.feedbackSoundVolume == 0.4)
+    #expect(AppSettings.default.feedbackSoundTheme == .glass)
+    #expect(DictationSoundTheme.allCases.count == 10)
 }
 
 @Test
@@ -40,6 +43,8 @@ func settingsDecodeSafelyFromThePreviousSchema() throws {
     #expect(settings.modelMemoryPolicy == .unloadAfterFiveMinutes)
     #expect(settings.audioRetention == .sevenDays)
     #expect(settings.historyLimit == 200)
+    #expect(settings.feedbackSoundVolume == 0.4)
+    #expect(settings.feedbackSoundTheme == .glass)
 }
 
 @Test

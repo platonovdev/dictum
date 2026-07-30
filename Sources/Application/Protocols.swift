@@ -24,12 +24,45 @@ public protocol ConfigurableLocalTranscriptionEngine: SpeechTranscriptionEngine 
     )
 }
 
+/// Engines backed by an isolated worker can abort a wedged native decode
+/// without taking the host app down with it.
+@MainActor
+public protocol CancellableSpeechTranscriptionEngine: SpeechTranscriptionEngine {
+    func cancelCurrentTranscription() async
+}
+
 @MainActor
 public protocol AudioCaptureService {
     func makeMeterStream() -> AsyncStream<AudioMeterFrame>
     func startRecording() async throws
+    /// Excludes a short, app-generated output cue from the saved microphone
+    /// stream without delaying the visual start of dictation.
+    func suppressSystemFeedback(for duration: TimeInterval)
     func stopRecording() async throws -> CapturedAudio
     func cancelRecording() async
+    /// Returns complete recordings left behind by an interrupted app process.
+    /// Implementations that only keep ephemeral audio can use the default.
+    func recoverPendingRecordings() async -> [CapturedAudio]
+}
+
+public extension AudioCaptureService {
+    func suppressSystemFeedback(for duration: TimeInterval) {}
+    func recoverPendingRecordings() async -> [CapturedAudio] { [] }
+}
+
+/// Short, optional audio cues that reinforce the visible dictation state.
+/// A volume of zero is the accessible, fully silent mode.
+@MainActor
+public protocol DictationSoundFeedbackService {
+    func playRecordingStarted(theme: DictationSoundTheme, volume: Double)
+    func playProcessingStarted(theme: DictationSoundTheme, volume: Double)
+    func playPreview(theme: DictationSoundTheme, volume: Double)
+}
+
+public extension DictationSoundFeedbackService {
+    func playPreview(theme: DictationSoundTheme, volume: Double) {
+        playRecordingStarted(theme: theme, volume: volume)
+    }
 }
 
 @MainActor
@@ -79,11 +112,15 @@ public protocol DictationAudioArchive: Sendable {
     func archive(_ capturedAudio: CapturedAudio, for entryID: UUID) async throws -> ArchivedAudio
     func createRetainedAudioCopy(from archivedAudio: ArchivedAudio, for entryID: UUID) async throws -> ArchivedAudio
     func loadArchivedAudio(at path: String, duration: TimeInterval) async throws -> CapturedAudio
+    /// Finds durable source recordings that were moved out of Pending before
+    /// their history transaction could commit.
+    func recoverArchivedRecordings() async -> [ArchivedAudio]
     func deleteArchivedAudio(at path: String) async
     func cleanupUnreferencedAudio(keepingPaths: Set<String>, olderThan cutoff: Date) async
 }
 
 public extension DictationAudioArchive {
+    func recoverArchivedRecordings() async -> [ArchivedAudio] { [] }
     func cleanupUnreferencedAudio(keepingPaths: Set<String>, olderThan cutoff: Date) async {}
 }
 

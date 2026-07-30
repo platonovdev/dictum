@@ -293,18 +293,41 @@ public final class CompositeTextInsertionService: TextInsertionService, @uncheck
     }
 
     private func withAccessibilityInsertionTimeout(text: String) async -> InsertionResult {
-        await withTaskGroup(of: InsertionResult.self) { group in
-            group.addTask { [accessibilityInsertion] in
-                await accessibilityInsertion.insert(text: text)
-            }
-            group.addTask {
-                try? await Task.sleep(for: .milliseconds(450))
-                return .failure(.insertionFailed("Accessibility insertion timed out."))
-            }
+        await withCheckedContinuation { continuation in
+            let completion = InsertionResultCompletion(continuation: continuation)
 
-            let firstResult = await group.next() ?? .failure(.insertionFailed("Insertion produced no result."))
-            group.cancelAll()
-            return firstResult
+            // AX calls are synchronous at the system boundary and do not
+            // cooperate with Swift task cancellation. A task group therefore
+            // still waits for a wedged AX call after its timeout child wins.
+            // Race two unstructured tasks through a one-shot continuation so
+            // the dictation session can always fall back to the clipboard.
+            Task.detached(priority: .userInitiated) { [accessibilityInsertion] in
+                completion.resume(with: await accessibilityInsertion.insert(text: text))
+            }
+            Task.detached {
+                try? await Task.sleep(for: .milliseconds(450))
+                completion.resume(with: .failure(.insertionFailed("Accessibility insertion timed out.")))
+            }
         }
+    }
+}
+
+private final class InsertionResultCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<InsertionResult, Never>?
+
+    init(continuation: CheckedContinuation<InsertionResult, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(with result: InsertionResult) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        lock.unlock()
+        continuation.resume(returning: result)
     }
 }

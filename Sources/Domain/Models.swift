@@ -112,6 +112,32 @@ public struct HotkeyConfiguration: Codable, Hashable, Sendable {
     public static let `default` = HotkeyConfiguration(kind: .rightCommandHold)
 }
 
+public enum DictationSoundTheme: String, Codable, CaseIterable, Sendable {
+    case glass
+    case crystal
+    case ripple
+    case softTap
+    case bloom
+    case pulse
+    case air
+    case wood
+    case sonar
+    case bubble
+
+    /// Duration of the bundled opening cue. The recorder uses this to exclude
+    /// app-generated speaker output from the microphone file.
+    public var recordingCueDuration: TimeInterval {
+        switch self {
+        case .bubble:
+            0.236
+        case .softTap:
+            0.252
+        default:
+            0.4
+        }
+    }
+}
+
 public struct AppSettings: Codable, Equatable, Sendable {
     public var modelIdentifier: String
     public var hotkey: HotkeyConfiguration
@@ -126,6 +152,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var modelMemoryPolicy: ModelMemoryPolicy
     public var audioRetention: AudioRetentionPolicy
     public var historyLimit: Int
+    public var feedbackSoundVolume: Double
+    public var feedbackSoundTheme: DictationSoundTheme
 
     public init(
         modelIdentifier: String,
@@ -140,7 +168,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showOverlay: Bool = true,
         modelMemoryPolicy: ModelMemoryPolicy = .unloadAfterFiveMinutes,
         audioRetention: AudioRetentionPolicy = .sevenDays,
-        historyLimit: Int = 200
+        historyLimit: Int = 200,
+        feedbackSoundVolume: Double = 0.4,
+        feedbackSoundTheme: DictationSoundTheme = .glass
     ) {
         self.modelIdentifier = modelIdentifier
         self.hotkey = hotkey
@@ -155,11 +185,16 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.modelMemoryPolicy = modelMemoryPolicy
         self.audioRetention = audioRetention
         self.historyLimit = min(max(historyLimit, 10), 2_000)
+        self.feedbackSoundVolume = feedbackSoundVolume.isFinite
+            ? min(max(feedbackSoundVolume, 0), 1)
+            : 0.4
+        self.feedbackSoundTheme = feedbackSoundTheme
     }
 
     private enum CodingKeys: String, CodingKey {
         case modelIdentifier, hotkey, autoPaste, launchAtLogin, overlayPosition
         case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, modelMemoryPolicy, audioRetention, historyLimit
+        case feedbackSoundVolume, feedbackSoundTheme
     }
 
     public init(from decoder: any Decoder) throws {
@@ -181,6 +216,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
         modelMemoryPolicy = try container.decodeIfPresent(ModelMemoryPolicy.self, forKey: .modelMemoryPolicy) ?? .unloadAfterFiveMinutes
         audioRetention = try container.decodeIfPresent(AudioRetentionPolicy.self, forKey: .audioRetention) ?? .sevenDays
         historyLimit = min(max(try container.decodeIfPresent(Int.self, forKey: .historyLimit) ?? 200, 10), 2_000)
+        let decodedSoundVolume = try container.decodeIfPresent(Double.self, forKey: .feedbackSoundVolume) ?? 0.4
+        feedbackSoundVolume = decodedSoundVolume.isFinite
+            ? min(max(decodedSoundVolume, 0), 1)
+            : 0.4
+        feedbackSoundTheme = try container.decodeIfPresent(DictationSoundTheme.self, forKey: .feedbackSoundTheme) ?? .glass
     }
 
     public static let `default` = AppSettings(
@@ -649,6 +689,10 @@ public enum DictationSessionState: Equatable, Sendable {
 
 public extension AppError {
     var userFacingDescription: String {
+        if Locale.preferredLanguages.first?.lowercased().hasPrefix("ru") == true {
+            return russianUserFacingDescription
+        }
+
         switch self {
         case .permissionsMissing(let permissions):
             let names = permissions.map(\.displayName).joined(separator: ", ")
@@ -679,6 +723,46 @@ public extension AppError {
             return "The global hotkey could not be started."
         case .unsupportedPlatform:
             return "This app currently supports Apple Silicon on macOS only."
+        }
+    }
+
+    private var russianUserFacingDescription: String {
+        switch self {
+        case .permissionsMissing(let permissions):
+            let names = permissions.map { permission in
+                switch permission {
+                case .microphone: "микрофон"
+                case .accessibility: "универсальный доступ"
+                case .inputMonitoring: "мониторинг ввода"
+                }
+            }.joined(separator: ", ")
+            return "Не хватает разрешений: \(names)."
+        case .modelUnavailable:
+            return "Локальная модель Whisper пока не готова."
+        case .audioCaptureFailed:
+            return "Не удалось записать звук. Проверьте микрофон и попробуйте ещё раз."
+        case .transcriptionFailed:
+            return "Не удалось распознать запись. Аудио сохранено в истории — обработку можно повторить."
+        case .insertionFailed:
+            return "Не удалось вставить распознанный текст."
+        case .audioArchiveFailed:
+            return "Не удалось сохранить аудиозапись для повторной обработки."
+        case .historyPersistenceFailed:
+            return "Не удалось сохранить историю диктовок."
+        case .historyEntryNotFound:
+            return "Запись не найдена в истории."
+        case .archivedAudioUnavailable:
+            return "Сохранённая аудиозапись недоступна."
+        case .launchAtLoginFailed:
+            return "Не удалось изменить автозапуск приложения."
+        case .secureInputField:
+            return "Это защищённое поле. Текст скопирован в буфер обмена."
+        case .emptyTranscript:
+            return "Речь не распознана."
+        case .hotkeyUnavailable:
+            return "Не удалось включить глобальное сочетание клавиш."
+        case .unsupportedPlatform:
+            return "Приложение поддерживает только Mac с Apple Silicon."
         }
     }
 }

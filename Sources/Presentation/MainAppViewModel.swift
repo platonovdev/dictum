@@ -10,11 +10,11 @@ public enum MainAppSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .settings:
-            return "Settings"
+            return L10n.text("Settings", "Настройки")
         case .history:
-            return "History"
+            return L10n.text("History", "История")
         case .statistics:
-            return "Statistics"
+            return L10n.text("Statistics", "Статистика")
         }
     }
 

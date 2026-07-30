@@ -18,42 +18,50 @@ public final class MenuBarController: NSObject {
         if let button = statusItem.button {
             button.image = NSImage(
                 systemSymbolName: "mic",
-                accessibilityDescription: "Dictum"
+                accessibilityDescription: L10n.text("Dictator", "Диктатор")
             )
         }
 
         let menu = NSMenu()
-        let settingsItem = NSMenuItem(title: "Settings", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = menuItem(title: L10n.text("Settings…", "Настройки…"), symbol: "gearshape", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let historyItem = NSMenuItem(title: "History", action: #selector(openHistory), keyEquivalent: "")
+        let historyItem = menuItem(title: L10n.text("Show History", "Показать историю"), symbol: "text.badge.clock", action: #selector(openHistory))
         historyItem.target = self
         menu.addItem(historyItem)
 
-        let statisticsItem = NSMenuItem(title: "Statistics", action: #selector(openStatistics), keyEquivalent: "")
+        let statisticsItem = menuItem(title: L10n.text("Show Statistics", "Показать статистику"), symbol: "chart.bar", action: #selector(openStatistics))
         statisticsItem.target = self
         menu.addItem(statisticsItem)
 
-        let copyItem = NSMenuItem(title: "Copy Last Transcription", action: #selector(copyLastTranscription), keyEquivalent: "c")
+        menu.addItem(.separator())
+
+        let copyItem = menuItem(title: L10n.text("Copy Last Transcription", "Скопировать последний текст"), symbol: "doc.on.doc", action: #selector(copyLastTranscription), keyEquivalent: "c")
         copyItem.target = self
         menu.addItem(copyItem)
 
-        let resetItem = NSMenuItem(title: "Reset Session", action: #selector(resetSession), keyEquivalent: "r")
+        let resetItem = menuItem(title: L10n.text("Reset Dictation", "Сбросить запись"), symbol: "arrow.counterclockwise", action: #selector(resetSession), keyEquivalent: "r")
         resetItem.target = self
         menu.addItem(resetItem)
 
-        let restartItem = NSMenuItem(title: "Restart App", action: #selector(restartApp), keyEquivalent: "")
+        menu.addItem(.separator())
+
+        let restartItem = menuItem(title: L10n.text("Restart Dictator", "Перезапустить Диктатор"), symbol: "arrow.clockwise", action: #selector(restartApp))
         restartItem.target = self
         menu.addItem(restartItem)
 
-        menu.addItem(.separator())
-
-        let quitItem = NSMenuItem(title: "Quit Dictum", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = menuItem(title: L10n.text("Quit Dictator", "Выйти из Диктатора"), symbol: "power", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+    }
+
+    private func menuItem(title: String, symbol: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        return item
     }
 
     @objc private func openSettings() {

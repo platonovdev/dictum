@@ -7,7 +7,8 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "Dictum", targets: ["Dictum"])
+        .executable(name: "Dictum", targets: ["Dictum"]),
+        .executable(name: "DictatorTranscriber", targets: ["DictatorTranscriber"])
     ],
     dependencies: [],
     targets: [
@@ -29,6 +30,9 @@ let package = Package(
                 "Domain",
                 "Application",
                 "WhisperCpp"
+            ],
+            resources: [
+                .copy("Resources/FeedbackSounds")
             ]
         ),
         .target(
@@ -39,6 +43,14 @@ let package = Package(
             name: "Dictum",
             dependencies: ["Domain", "Application", "Infrastructure", "Presentation"],
             path: "Sources/OneBtnVoiceApp",
+            swiftSettings: [
+                .unsafeFlags(["-parse-as-library"])
+            ]
+        ),
+        .executableTarget(
+            name: "DictatorTranscriber",
+            dependencies: ["Domain", "Application", "Infrastructure"],
+            path: "Sources/DictatorTranscriber",
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
             ]
