@@ -148,31 +148,42 @@ private struct LiveSpeechBarsView: View {
     let levels: [Float]
 
     var body: some View {
-        Canvas { context, size in
-            let centerY = size.height / 2
-            let count = levels.count
-            let gap: CGFloat = 1.2
-            let barWidth = max(1.7, (size.width - (CGFloat(max(count - 1, 0)) * gap)) / CGFloat(max(count, 1)))
+        LiveSpeechBarsShape(levels: levels)
+            .fill(Color.accentColor.opacity(0.78))
+            .clipped()
+    }
+}
 
-            for i in 0..<count {
-                let level = levels[i]
-                let intensity = CGFloat(min(max(level, 0), 1))
-                let barH = max(1, intensity * size.height)
-                let opacity = 0.35 + (Double(intensity) * 0.62)
+/// A pure `Shape` avoids SwiftUI Canvas display-list callbacks. On macOS 26,
+/// Canvas can evaluate an actor-inferred drawing closure outside Swift's main
+/// executor and crash before the closure body starts.
+struct LiveSpeechBarsShape: Shape {
+    let levels: [Float]
 
-                let x = CGFloat(i) * (barWidth + gap)
+    nonisolated func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let centerY = rect.midY
+        let count = levels.count
+        let gap: CGFloat = 1.2
+        let barWidth = max(
+            1.7,
+            (rect.width - (CGFloat(max(count - 1, 0)) * gap)) / CGFloat(max(count, 1))
+        )
 
-                let rect = CGRect(
-                    x: x,
-                    y: centerY - barH / 2,
-                    width: barWidth,
-                    height: barH
-                )
-                let path = Path(roundedRect: rect, cornerRadius: barWidth / 2)
-                context.fill(path, with: .color(Color.accentColor.opacity(opacity)))
-            }
+        for index in 0..<count {
+            let intensity = CGFloat(min(max(levels[index], 0), 1))
+            let barHeight = max(1, intensity * rect.height)
+            let x = rect.minX + (CGFloat(index) * (barWidth + gap))
+            let barRect = CGRect(
+                x: x,
+                y: centerY - (barHeight / 2),
+                width: barWidth,
+                height: barHeight
+            )
+            path.addPath(Path(roundedRect: barRect, cornerRadius: barWidth / 2))
         }
-        .clipped()
+
+        return path
     }
 }
 

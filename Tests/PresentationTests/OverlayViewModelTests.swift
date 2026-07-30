@@ -96,6 +96,22 @@ func liveSpeechWaveformMovesStationaryBarsWithCurrentVoiceEnergy() {
     #expect(settledBars.allSatisfy { $0 <= LiveSpeechWaveform.idleLevel + 0.01 })
 }
 
+@Test
+func liveSpeechBarsShapeRendersOutsideTheMainActor() async {
+    let levels = (0..<LiveSpeechWaveform.barCount).map { index in
+        Float(index + 1) / Float(LiveSpeechWaveform.barCount)
+    }
+
+    let bounds = await Task.detached {
+        LiveSpeechBarsShape(levels: levels)
+            .path(in: CGRect(x: 0, y: 0, width: 82, height: 20))
+            .boundingRect
+    }.value
+
+    #expect(bounds.width > 75)
+    #expect(bounds.height == 20)
+}
+
 private final class MockCoordinator: DictationSessionCoordinating {
     private var stateContinuation: AsyncStream<DictationSessionState>.Continuation?
     private var meterContinuation: AsyncStream<AudioMeterFrame>.Continuation?

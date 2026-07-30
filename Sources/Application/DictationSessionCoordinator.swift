@@ -139,7 +139,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
                 try await ensureModelPrepared(named: updatedSettings.modelIdentifier)
             }
 
-            scheduleModelUnloadIfNeeded()
+            scheduleModelUnloadIfNeeded(resetExisting: true)
 
             if case .error = state {
                 transition(to: .idle())
@@ -1075,8 +1075,16 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         }
     }
 
-    private func scheduleModelUnloadIfNeeded() {
-        cancelScheduledModelUnload()
+    private func scheduleModelUnloadIfNeeded(resetExisting: Bool = false) {
+        if resetExisting {
+            cancelScheduledModelUnload()
+        } else if modelIdleUnloadTask != nil {
+            // Model preparation can finish while an idle transition is also
+            // being delivered. Both paths request the same unload window; do
+            // not create two concurrent tasks that can unload and re-prepare
+            // the model twice when recording starts at that boundary.
+            return
+        }
         guard isModelPrepared, let idleDuration = settings.modelMemoryPolicy.idleDuration else {
             return
         }

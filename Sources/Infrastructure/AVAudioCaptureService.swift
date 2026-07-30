@@ -12,13 +12,20 @@ public final class AVAudioCaptureService: AudioCaptureService {
 
     private var outputURL: URL?
 
-    public init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
+    public convenience init(fileManager: FileManager = .default) {
         let applicationSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
-        pendingDirectoryURL = applicationSupportURL
+        self.init(
+            fileManager: fileManager,
+            pendingDirectoryURL: applicationSupportURL
             .appendingPathComponent("Dictator", isDirectory: true)
             .appendingPathComponent("PendingRecordings", isDirectory: true)
+        )
+    }
+
+    init(fileManager: FileManager, pendingDirectoryURL: URL) {
+        self.fileManager = fileManager
+        self.pendingDirectoryURL = pendingDirectoryURL
     }
 
     public func makeMeterStream() -> AsyncStream<AudioMeterFrame> {
@@ -93,6 +100,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
             let file = try AVAudioFile(forReading: outputURL)
             let actualFrames = file.length
             guard actualFrames > 0 else {
+                try? fileManager.removeItem(at: outputURL)
                 throw AppError.audioCaptureFailed("The recording contains no audio frames.")
             }
 
@@ -139,9 +147,17 @@ public final class AVAudioCaptureService: AudioCaptureService {
         return files.compactMap { url in
             guard url.pathExtension.lowercased() == "wav",
                   (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
-                  let file = try? AVAudioFile(forReading: url),
-                  file.length > 0,
-                  file.processingFormat.sampleRate > 0 else {
+                  let file = try? AVAudioFile(forReading: url) else {
+                return nil
+            }
+
+            guard file.length > 0 else {
+                // A finalized header without a single audio frame cannot be
+                // recovered and should not accumulate after failed starts.
+                try? fileManager.removeItem(at: url)
+                return nil
+            }
+            guard file.processingFormat.sampleRate > 0 else {
                 return nil
             }
             return CapturedAudio(
