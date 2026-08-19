@@ -157,9 +157,18 @@ public final class OverlayViewModel: ObservableObject {
 
     private func updateElapsedLabel(from date: Date) {
         let elapsed = max(Int(Date().timeIntervalSince(date)), 0)
-        let minutes = elapsed / 60
-        let seconds = elapsed % 60
-        timerText = String(format: "%d:%02d", minutes, seconds)
+        timerText = Self.formattedElapsedTime(seconds: elapsed)
     }
 
+    nonisolated static func formattedElapsedTime(seconds elapsed: Int) -> String {
+        let elapsed = max(elapsed, 0)
+        let hours = elapsed / 3_600
+        let minutes = (elapsed % 3_600) / 60
+        let seconds = elapsed % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
+    }
 }

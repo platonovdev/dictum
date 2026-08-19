@@ -6,6 +6,13 @@ import Foundation
 import Testing
 
 @Test
+func overlayTimerStaysCompactForLongRecordings() {
+    #expect(OverlayViewModel.formattedElapsedTime(seconds: 9 * 60 + 59) == "9:59")
+    #expect(OverlayViewModel.formattedElapsedTime(seconds: 10 * 60 + 33) == "10:33")
+    #expect(OverlayViewModel.formattedElapsedTime(seconds: 60 * 60 + 2 * 60 + 3) == "1:02:03")
+}
+
+@Test
 @MainActor
 func overlayViewModelShowsStatusTextOutsideRecording() async {
     let coordinator = MockCoordinator()

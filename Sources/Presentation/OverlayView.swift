@@ -5,7 +5,10 @@ enum OverlayLayout {
     static let initialWidth: CGFloat = 162
     static let height: CGFloat = 40
     static let cornerRadius: CGFloat = 12
-    static let waveformWidth: CGFloat = 82
+    // Keep the panel itself compact while reserving enough room for timers
+    // beyond ten minutes. The waveform remains comfortably legible at 76 pt.
+    static let waveformWidth: CGFloat = 76
+    static let timerWidth: CGFloat = 38
     static let compactIndicatorWidth: CGFloat = 15
 }
 
@@ -83,7 +86,10 @@ public struct OverlayView: View {
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(Color.black.opacity(0.82))
-                .frame(width: 32, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .allowsTightening(true)
+                .frame(width: OverlayLayout.timerWidth, alignment: .leading)
 
             ZStack {
                 Image(systemName: "lock.fill")
