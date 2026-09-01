@@ -13,6 +13,13 @@ struct AudioCaptureRoute: Equatable, Sendable {
 
 @MainActor
 public final class AVAudioCaptureService: AudioCaptureService {
+    private enum Constants {
+        // Voice dictation commonly happens in short bursts. Keep the stopped
+        // graph warm for that working session, then release it so Bluetooth
+        // and Core Audio resources are not retained indefinitely.
+        static let preparedResourceIdleDuration: Duration = .seconds(30 * 60)
+    }
+
     // Keep a configured engine between recordings. Rebuilding AVAudioEngine on
     // every press makes Bluetooth devices tear down and recreate their private
     // input/output aggregate, which can take several seconds. The route
@@ -27,6 +34,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
     private let logger = Logger(subsystem: "com.dictator.app", category: "audio-capture")
 
     private var outputURL: URL?
+    private var preparedResourceReleaseTask: Task<Void, Never>?
 
     public convenience init(fileManager: FileManager = .default) {
         let applicationSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -53,6 +61,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
     }
 
     public func prepareForRecording() async {
+        cancelScheduledPreparedResourceRelease()
         guard outputURL == nil, audioEngine?.isRunning != true else {
             return
         }
@@ -79,9 +88,11 @@ public final class AVAudioCaptureService: AudioCaptureService {
         engine.prepare()
         preparedRoute = route
         logger.info("Audio capture graph prepared without starting the microphone")
+        schedulePreparedResourceRelease()
     }
 
     public func startRecording() async throws {
+        cancelScheduledPreparedResourceRelease()
         guard outputURL == nil, audioEngine?.isRunning != true else {
             throw AppError.audioCaptureFailed("A recording session is already active.")
         }
@@ -140,7 +151,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
             let latencyMilliseconds = Int(
                 ((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000).rounded()
             )
-            logger.info(
+            logger.notice(
                 "Audio capture ready in \(latencyMilliseconds, privacy: .public)ms; reusedEngine=\(reusedEngine, privacy: .public)"
             )
         } catch {
@@ -172,6 +183,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
             // fast, privacy-safe path for the next hotkey press.
             audioEngine.pause()
         }
+        schedulePreparedResourceRelease()
 
         // Pausing prevents new callbacks; `finish` then waits on the same lock
         // used for every file write. The tap remains installed on the inactive
@@ -214,6 +226,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
         if let audioEngine, audioEngine.isRunning {
             audioEngine.pause()
         }
+        schedulePreparedResourceRelease()
         _ = tapSink.finish()
         if let outputURL {
             try? fileManager.removeItem(at: outputURL)
@@ -233,8 +246,44 @@ public final class AVAudioCaptureService: AudioCaptureService {
     }
 
     private func replaceAudioEngine() {
+        cancelScheduledPreparedResourceRelease()
         audioEngine?.stop()
         audioEngine = AVAudioEngine()
+        preparedRoute = nil
+        isTapInstalled = false
+    }
+
+    private func schedulePreparedResourceRelease() {
+        cancelScheduledPreparedResourceRelease()
+        preparedResourceReleaseTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: Constants.preparedResourceIdleDuration)
+            } catch {
+                return
+            }
+            guard let self,
+                  self.outputURL == nil,
+                  self.audioEngine?.isRunning != true else {
+                return
+            }
+
+            self.releasePreparedResources()
+            self.preparedResourceReleaseTask = nil
+            self.logger.notice("Released idle audio capture graph after 30 minutes")
+        }
+    }
+
+    private func cancelScheduledPreparedResourceRelease() {
+        preparedResourceReleaseTask?.cancel()
+        preparedResourceReleaseTask = nil
+    }
+
+    private func releasePreparedResources() {
+        if isTapInstalled, let inputNode = audioEngine?.inputNode {
+            inputNode.removeTap(onBus: 0)
+        }
+        audioEngine?.stop()
+        audioEngine = nil
         preparedRoute = nil
         isTapInstalled = false
     }

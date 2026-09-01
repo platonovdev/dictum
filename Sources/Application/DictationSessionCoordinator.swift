@@ -199,7 +199,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             let startLatencyMilliseconds = Int(
                 ((ProcessInfo.processInfo.systemUptime - requestedAt) * 1_000).rounded()
             )
-            logger.info(
+            logger.notice(
                 "Recording started for session \(sessionID.uuidString, privacy: .public); startLatency=\(startLatencyMilliseconds, privacy: .public)ms"
             )
             transition(to: .recording(startedAt: startedAt))

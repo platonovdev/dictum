@@ -82,7 +82,9 @@ public final class OverlayWindowController {
         }
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
+            // Six frames at 60 Hz preserve a soft appearance without making
+            // the already-ready microphone feel delayed.
+            context.duration = 0.10
             context.allowsImplicitAnimation = true
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
