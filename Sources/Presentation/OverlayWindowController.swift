@@ -8,6 +8,7 @@ public final class OverlayWindowController {
     private let viewModel: OverlayViewModel
     private var cancellables: Set<AnyCancellable> = []
     private var isEnabled = true
+    private var isCaretAnchoringEnabled = true
     private var lastRecordingWidth = OverlayLayout.initialWidth
     private var accessibilityCaretFrame: CGRect?
 
@@ -100,10 +101,17 @@ public final class OverlayWindowController {
     /// Supplies the caret captured at the same instant as the hotkey press.
     /// Late results are ignored so an already-visible panel never jumps.
     public func setNextAccessibilityCaretFrame(_ frame: CGRect?) {
-        guard !panel.isVisible else {
+        guard isCaretAnchoringEnabled, !panel.isVisible else {
             return
         }
         accessibilityCaretFrame = frame
+    }
+
+    public func setCaretAnchoringEnabled(_ isEnabled: Bool) {
+        isCaretAnchoringEnabled = isEnabled
+        if !isEnabled {
+            accessibilityCaretFrame = nil
+        }
     }
 
     public func setEnabled(_ isEnabled: Bool) {

@@ -18,8 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task {
             let settings = (try? await container.loadSettingsUseCase.execute()) ?? .default
-            registerHotkey(with: settings.hotkey)
+            registerHotkey(
+                with: settings.hotkey,
+                anchorsOverlayToCaret: settings.positionOverlayNearCaret
+            )
             overlayWindowController.setEnabled(settings.showOverlay)
+            overlayWindowController.setCaretAnchoringEnabled(settings.positionOverlayNearCaret)
             container.transcriptionEngine.updateSettings(
                 language: settings.language,
                 customWords: settings.customWords,
@@ -86,8 +90,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func bindSettingsUpdates() {
         container.settingsViewModel.onSettingsSaved = { [weak self] settings in
-            self?.registerHotkey(with: settings.hotkey)
+            self?.registerHotkey(
+                with: settings.hotkey,
+                anchorsOverlayToCaret: settings.positionOverlayNearCaret
+            )
             self?.overlayWindowController.setEnabled(settings.showOverlay)
+            self?.overlayWindowController.setCaretAnchoringEnabled(settings.positionOverlayNearCaret)
             self?.container.transcriptionEngine.updateSettings(
                 language: settings.language,
                 customWords: settings.customWords,
@@ -99,7 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func registerHotkey(with configuration: HotkeyConfiguration) {
+    private func registerHotkey(
+        with configuration: HotkeyConfiguration,
+        anchorsOverlayToCaret: Bool
+    ) {
         let caretAnchorProvider = container.caretAnchorProvider
         do {
             try container.hotkeyService.startListening(configuration: configuration) { [weak self] event in
@@ -107,8 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                let caretLookup: Task<CGRect?, Never>? = switch event {
-                case .pressed, .pressedAt:
+                let caretLookup: Task<CGRect?, Never>? = switch (event, anchorsOverlayToCaret) {
+                case (.pressed, true), (.pressedAt, true):
                     Task.detached(priority: .userInitiated) {
                         caretAnchorProvider.currentCaretFrame()
                     }

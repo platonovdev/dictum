@@ -26,6 +26,17 @@ public struct SettingsView: View {
                     Toggle(L10n.text("Paste recognized text at cursor", "Вставлять распознанный текст в позицию курсора"), isOn: $settingsViewModel.settings.autoPaste)
                     Toggle(L10n.text("Add a space after each dictation", "Добавлять пробел после каждой диктовки"), isOn: $settingsViewModel.settings.appendTrailingSpace)
                     Toggle(L10n.text("Show floating recording indicator", "Показывать плавающий индикатор записи"), isOn: $settingsViewModel.settings.showOverlay)
+                    if settingsViewModel.settings.showOverlay {
+                        Toggle(
+                            L10n.text("Place indicator next to text cursor", "Размещать индикатор рядом с текстовым курсором"),
+                            isOn: $settingsViewModel.settings.positionOverlayNearCaret
+                        )
+                        .padding(.leading, 20)
+                        .help(L10n.text(
+                            "When unavailable, the indicator stays at the bottom of the screen.",
+                            "Если позиция курсора недоступна, индикатор останется внизу экрана."
+                        ))
+                    }
                     Toggle(
                         L10n.text("Pause media while recording", "Ставить музыку на паузу во время записи"),
                         isOn: $settingsViewModel.settings.pauseMediaDuringRecording

@@ -149,6 +149,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var translateToEnglish: Bool
     public var appendTrailingSpace: Bool
     public var showOverlay: Bool
+    public var positionOverlayNearCaret: Bool
     public var pauseMediaDuringRecording: Bool
     public var modelMemoryPolicy: ModelMemoryPolicy
     public var audioRetention: AudioRetentionPolicy
@@ -167,6 +168,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         translateToEnglish: Bool = false,
         appendTrailingSpace: Bool = true,
         showOverlay: Bool = true,
+        positionOverlayNearCaret: Bool = true,
         pauseMediaDuringRecording: Bool = true,
         modelMemoryPolicy: ModelMemoryPolicy = .unloadAfterFiveMinutes,
         audioRetention: AudioRetentionPolicy = .sevenDays,
@@ -184,6 +186,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.translateToEnglish = translateToEnglish
         self.appendTrailingSpace = appendTrailingSpace
         self.showOverlay = showOverlay
+        self.positionOverlayNearCaret = positionOverlayNearCaret
         self.pauseMediaDuringRecording = pauseMediaDuringRecording
         self.modelMemoryPolicy = modelMemoryPolicy
         self.audioRetention = audioRetention
@@ -196,7 +199,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case modelIdentifier, hotkey, autoPaste, launchAtLogin, overlayPosition
-        case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, pauseMediaDuringRecording, modelMemoryPolicy, audioRetention, historyLimit
+        case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, positionOverlayNearCaret, pauseMediaDuringRecording, modelMemoryPolicy, audioRetention, historyLimit
         case feedbackSoundVolume, feedbackSoundTheme
     }
 
@@ -216,6 +219,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         translateToEnglish = try container.decodeIfPresent(Bool.self, forKey: .translateToEnglish) ?? false
         appendTrailingSpace = try container.decodeIfPresent(Bool.self, forKey: .appendTrailingSpace) ?? true
         showOverlay = try container.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? true
+        positionOverlayNearCaret = try container.decodeIfPresent(Bool.self, forKey: .positionOverlayNearCaret) ?? true
         pauseMediaDuringRecording = try container.decodeIfPresent(Bool.self, forKey: .pauseMediaDuringRecording) ?? true
         modelMemoryPolicy = try container.decodeIfPresent(ModelMemoryPolicy.self, forKey: .modelMemoryPolicy) ?? .unloadAfterFiveMinutes
         audioRetention = try container.decodeIfPresent(AudioRetentionPolicy.self, forKey: .audioRetention) ?? .sevenDays
