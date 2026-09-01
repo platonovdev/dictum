@@ -65,6 +65,15 @@ public extension DictationSoundFeedbackService {
     }
 }
 
+/// Coordinates other media with a dictation without ever becoming a
+/// prerequisite for recording. Implementations must be fast and best-effort.
+@MainActor
+public protocol BackgroundMediaPlaybackService: AnyObject {
+    @discardableResult
+    func pauseActivePlayback() -> Bool
+    func resumePausedPlayback()
+}
+
 @MainActor
 public protocol GlobalHotkeyService: AnyObject {
     func startListening(

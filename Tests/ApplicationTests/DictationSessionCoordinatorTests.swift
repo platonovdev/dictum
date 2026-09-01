@@ -155,6 +155,98 @@ func stopDictationInsertsTranscriptWhenAutoPasteEnabled() async {
 
 @Test
 @MainActor
+func dictationPausesMediaAndResumesItBeforeProcessingCompletes() async {
+    let mediaPlayback = MockMediaPlaybackService()
+    let coordinator = DictationSessionCoordinator(
+        transcriptionEngine: MockSpeechEngine(),
+        audioCaptureService: MockAudioCaptureService(),
+        insertionService: MockInsertionService(),
+        permissionService: MockPermissionService(
+            snapshot: PermissionSnapshot(
+                microphone: .authorized,
+                accessibility: .authorized,
+                inputMonitoring: .authorized
+            )
+        ),
+        settingsStore: MockSettingsStore(),
+        historyStore: MockHistoryStore(),
+        audioArchive: MockArchive(),
+        mediaPlaybackService: mediaPlayback
+    )
+
+    await coordinator.prepare()
+    await coordinator.startDictation()
+    #expect(mediaPlayback.pauseCount == 1)
+    #expect(mediaPlayback.resumeCount == 0)
+
+    await coordinator.stopDictation()
+    #expect(mediaPlayback.resumeCount == 1)
+}
+
+@Test
+@MainActor
+func mediaPauseCanBeDisabledWithoutChangingRecording() async {
+    var settings = AppSettings.default
+    settings.pauseMediaDuringRecording = false
+    let mediaPlayback = MockMediaPlaybackService()
+    let coordinator = DictationSessionCoordinator(
+        transcriptionEngine: MockSpeechEngine(),
+        audioCaptureService: MockAudioCaptureService(),
+        insertionService: MockInsertionService(),
+        permissionService: MockPermissionService(
+            snapshot: PermissionSnapshot(
+                microphone: .authorized,
+                accessibility: .authorized,
+                inputMonitoring: .authorized
+            )
+        ),
+        settingsStore: MockSettingsStore(settings: settings),
+        historyStore: MockHistoryStore(),
+        audioArchive: MockArchive(),
+        mediaPlaybackService: mediaPlayback
+    )
+
+    await coordinator.prepare()
+    await coordinator.startDictation()
+    await coordinator.stopDictation()
+
+    #expect(mediaPlayback.pauseCount == 0)
+    // Resume remains an idempotent cleanup call and has no effect unless the
+    // real service previously paused a media session.
+    #expect(mediaPlayback.resumeCount == 1)
+}
+
+@Test
+@MainActor
+func cancellingHandsFreeDictationResumesPausedMedia() async {
+    let mediaPlayback = MockMediaPlaybackService()
+    let coordinator = DictationSessionCoordinator(
+        transcriptionEngine: MockSpeechEngine(),
+        audioCaptureService: MockAudioCaptureService(),
+        insertionService: MockInsertionService(),
+        permissionService: MockPermissionService(
+            snapshot: PermissionSnapshot(
+                microphone: .authorized,
+                accessibility: .authorized,
+                inputMonitoring: .authorized
+            )
+        ),
+        settingsStore: MockSettingsStore(),
+        historyStore: MockHistoryStore(),
+        audioArchive: MockArchive(),
+        mediaPlaybackService: mediaPlayback
+    )
+
+    await coordinator.prepare()
+    await coordinator.startDictation()
+    await coordinator.resetSession()
+
+    #expect(mediaPlayback.pauseCount == 1)
+    #expect(mediaPlayback.resumeCount == 1)
+}
+
+@Test
+@MainActor
 func stopDictationDoesNotDiscardAudioBecauseAdvisoryMeterMissedSpeech() async {
     let insertionService = MockInsertionService()
     let historyStore = MockHistoryStore()
@@ -419,6 +511,22 @@ private final class MockSoundFeedbackService: DictationSoundFeedbackService {
 
     func playProcessingStarted(theme: DictationSoundTheme, volume: Double) {
         processingStartedCues.append(.init(theme: theme, volume: volume))
+    }
+}
+
+@MainActor
+private final class MockMediaPlaybackService: BackgroundMediaPlaybackService {
+    private(set) var pauseCount = 0
+    private(set) var resumeCount = 0
+
+    @discardableResult
+    func pauseActivePlayback() -> Bool {
+        pauseCount += 1
+        return true
+    }
+
+    func resumePausedPlayback() {
+        resumeCount += 1
     }
 }
 

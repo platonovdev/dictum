@@ -26,6 +26,14 @@ public struct SettingsView: View {
                     Toggle(L10n.text("Paste recognized text at cursor", "Вставлять распознанный текст в позицию курсора"), isOn: $settingsViewModel.settings.autoPaste)
                     Toggle(L10n.text("Add a space after each dictation", "Добавлять пробел после каждой диктовки"), isOn: $settingsViewModel.settings.appendTrailingSpace)
                     Toggle(L10n.text("Show floating recording indicator", "Показывать плавающий индикатор записи"), isOn: $settingsViewModel.settings.showOverlay)
+                    Toggle(
+                        L10n.text("Pause media while recording", "Ставить музыку на паузу во время записи"),
+                        isOn: $settingsViewModel.settings.pauseMediaDuringRecording
+                    )
+                    .help(L10n.text(
+                        "Resume only media paused by Dictator when recording ends.",
+                        "После записи продолжить только то воспроизведение, которое остановил Диктатор."
+                    ))
                     VStack(alignment: .leading, spacing: 7) {
                         LabeledContent(L10n.text("Sound", "Звук")) {
                             HStack(spacing: 8) {

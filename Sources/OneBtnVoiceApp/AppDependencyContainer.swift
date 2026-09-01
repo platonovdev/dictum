@@ -17,6 +17,7 @@ final class AppDependencyContainer {
     let launchAtLoginService = SystemLaunchAtLoginService()
     let audioArchive = FileSystemDictationAudioArchive()
     let soundFeedbackService = BundledDictationSoundFeedbackService()
+    let mediaPlaybackService = SystemMediaPlaybackService()
 
     let loadSettingsUseCase: LoadSettingsUseCase
     let updateSettingsUseCase: UpdateSettingsUseCase
@@ -54,7 +55,8 @@ final class AppDependencyContainer {
             settingsStore: settingsStore,
             historyStore: historyStore,
             audioArchive: audioArchive,
-            soundFeedbackService: soundFeedbackService
+            soundFeedbackService: soundFeedbackService,
+            mediaPlaybackService: mediaPlaybackService
         )
 
         overlayViewModel = OverlayViewModel(coordinator: coordinator)

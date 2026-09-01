@@ -149,6 +149,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var translateToEnglish: Bool
     public var appendTrailingSpace: Bool
     public var showOverlay: Bool
+    public var pauseMediaDuringRecording: Bool
     public var modelMemoryPolicy: ModelMemoryPolicy
     public var audioRetention: AudioRetentionPolicy
     public var historyLimit: Int
@@ -166,6 +167,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         translateToEnglish: Bool = false,
         appendTrailingSpace: Bool = true,
         showOverlay: Bool = true,
+        pauseMediaDuringRecording: Bool = true,
         modelMemoryPolicy: ModelMemoryPolicy = .unloadAfterFiveMinutes,
         audioRetention: AudioRetentionPolicy = .sevenDays,
         historyLimit: Int = 200,
@@ -182,6 +184,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.translateToEnglish = translateToEnglish
         self.appendTrailingSpace = appendTrailingSpace
         self.showOverlay = showOverlay
+        self.pauseMediaDuringRecording = pauseMediaDuringRecording
         self.modelMemoryPolicy = modelMemoryPolicy
         self.audioRetention = audioRetention
         self.historyLimit = min(max(historyLimit, 10), 2_000)
@@ -193,7 +196,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case modelIdentifier, hotkey, autoPaste, launchAtLogin, overlayPosition
-        case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, modelMemoryPolicy, audioRetention, historyLimit
+        case language, customWords, translateToEnglish, appendTrailingSpace, showOverlay, pauseMediaDuringRecording, modelMemoryPolicy, audioRetention, historyLimit
         case feedbackSoundVolume, feedbackSoundTheme
     }
 
@@ -213,6 +216,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         translateToEnglish = try container.decodeIfPresent(Bool.self, forKey: .translateToEnglish) ?? false
         appendTrailingSpace = try container.decodeIfPresent(Bool.self, forKey: .appendTrailingSpace) ?? true
         showOverlay = try container.decodeIfPresent(Bool.self, forKey: .showOverlay) ?? true
+        pauseMediaDuringRecording = try container.decodeIfPresent(Bool.self, forKey: .pauseMediaDuringRecording) ?? true
         modelMemoryPolicy = try container.decodeIfPresent(ModelMemoryPolicy.self, forKey: .modelMemoryPolicy) ?? .unloadAfterFiveMinutes
         audioRetention = try container.decodeIfPresent(AudioRetentionPolicy.self, forKey: .audioRetention) ?? .sevenDays
         historyLimit = min(max(try container.decodeIfPresent(Int.self, forKey: .historyLimit) ?? 200, 10), 2_000)

@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         container.hotkeyService.stopListening()
+        container.mediaPlaybackService.resumePausedPlayback()
     }
 
     private func configureMenu() {

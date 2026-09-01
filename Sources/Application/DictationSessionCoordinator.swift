@@ -12,6 +12,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         static let processingTimeoutFloor: TimeInterval = 120
         static let processingTimeoutMultiplier: TimeInterval = 2
         static let processingTimeoutGrace: TimeInterval = 30
+        static let mediaPauseSettleDuration: TimeInterval = 0.25
     }
 
     private enum HotkeyGestureState: Equatable {
@@ -29,6 +30,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     private let historyStore: DictationHistoryStore
     private let audioArchive: DictationAudioArchive
     private let soundFeedbackService: DictationSoundFeedbackService?
+    private let mediaPlaybackService: BackgroundMediaPlaybackService?
     private let logger = Logger(subsystem: "com.dictator.app", category: "dictation-session")
 
     private let stateBroadcast = AsyncBroadcast<DictationSessionState>()
@@ -59,7 +61,8 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         settingsStore: SettingsStore,
         historyStore: DictationHistoryStore,
         audioArchive: DictationAudioArchive,
-        soundFeedbackService: DictationSoundFeedbackService? = nil
+        soundFeedbackService: DictationSoundFeedbackService? = nil,
+        mediaPlaybackService: BackgroundMediaPlaybackService? = nil
     ) {
         self.transcriptionEngine = transcriptionEngine
         self.audioCaptureService = audioCaptureService
@@ -69,6 +72,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         self.historyStore = historyStore
         self.audioArchive = audioArchive
         self.soundFeedbackService = soundFeedbackService
+        self.mediaPlaybackService = mediaPlaybackService
     }
 
     public func makeStateStream() -> AsyncStream<DictationSessionState> {
@@ -192,11 +196,24 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             recordingStartedAt = startedAt
             logger.info("Recording started for session \(sessionID.uuidString, privacy: .public)")
             transition(to: .recording(startedAt: startedAt))
-            if settings.feedbackSoundVolume > 0.001 {
+            let pausedActiveMedia = settings.pauseMediaDuringRecording
+                && (mediaPlaybackService?.pauseActivePlayback() == true)
+            // This is deliberately best-effort and happens only after the
+            // recording state is published. Media control must never make the
+            // microphone or overlay feel slower. Exclude the short playback
+            // tail and the optional cue from the microphone with one window.
+            let cueSuppressionDuration = settings.feedbackSoundVolume > 0.001
+                ? settings.feedbackSoundTheme.recordingCueDuration + 0.03
+                : 0
+            let inputSuppressionDuration = max(
+                pausedActiveMedia ? Constants.mediaPauseSettleDuration : 0,
+                cueSuppressionDuration
+            )
+            if inputSuppressionDuration > 0 {
                 // Keep listening responsive while excluding the known local
                 // cue from both the WAV and the live speech meter.
                 audioCaptureService.suppressSystemFeedback(
-                    for: settings.feedbackSoundTheme.recordingCueDuration + 0.03
+                    for: inputSuppressionDuration
                 )
             }
             soundFeedbackService?.playRecordingStarted(
@@ -234,6 +251,9 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
         do {
             let capturedAudio = try await audioCaptureService.stopRecording()
+            // Resume as soon as microphone capture is finalized. Whisper and
+            // text insertion may continue for much longer in the background.
+            mediaPlaybackService?.resumePausedPlayback()
             guard isCurrent(sessionID) else {
                 return
             }
@@ -510,6 +530,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             recordingStartedAt = nil
             latestPartialText = ""
         } catch let error as AppError {
+            mediaPlaybackService?.resumePausedPlayback()
             try? await persistFailedHistoryEntry(
                 id: sessionID,
                 startedAt: startedAt,
@@ -522,6 +543,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
             )
             await handleError(error)
         } catch {
+            mediaPlaybackService?.resumePausedPlayback()
             let failureError = AppError.audioCaptureFailed(error.localizedDescription)
             try? await persistFailedHistoryEntry(
                 id: sessionID,
@@ -581,6 +603,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         partialBroadcast.yield("")
         meterBroadcast.yield(.silent)
         await audioCaptureService.cancelRecording()
+        mediaPlaybackService?.resumePausedPlayback()
         recordingStartedAt = nil
         latestPartialText = ""
         transition(to: .idle())
