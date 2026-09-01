@@ -40,14 +40,12 @@ func cachedAudioEngineIsReusedOnlyForTheSameCompleteRoute() {
     let airPodsRoute = AudioCaptureRoute(
         inputDeviceID: 100,
         outputDeviceID: 94,
-        inputSampleRate: 24_000,
-        outputSampleRate: 44_100
+        inputSampleRate: 24_000
     )
     let builtInRoute = AudioCaptureRoute(
         inputDeviceID: 71,
         outputDeviceID: 69,
-        inputSampleRate: 48_000,
-        outputSampleRate: 48_000
+        inputSampleRate: 48_000
     )
 
     #expect(AVAudioCaptureService.canReuseEngine(
@@ -67,19 +65,4 @@ func cachedAudioEngineIsReusedOnlyForTheSameCompleteRoute() {
     ))
 }
 
-@Test
-@MainActor
-func staleAudioFormatsForceAnEngineRefresh() throws {
-    let mono24k = try #require(AVAudioFormat(
-        standardFormatWithSampleRate: 24_000,
-        channels: 1
-    ))
-    let mono48k = try #require(AVAudioFormat(
-        standardFormatWithSampleRate: 48_000,
-        channels: 1
-    ))
-
-    #expect(AVAudioCaptureService.formatsAreCompatible(mono24k, mono24k))
-    #expect(!AVAudioCaptureService.formatsAreCompatible(mono48k, mono24k))
-}
 #endif

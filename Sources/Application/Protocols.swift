@@ -34,6 +34,9 @@ public protocol CancellableSpeechTranscriptionEngine: SpeechTranscriptionEngine 
 @MainActor
 public protocol AudioCaptureService {
     func makeMeterStream() -> AsyncStream<AudioMeterFrame>
+    /// Preallocates the inactive capture graph so the first hotkey press does
+    /// not pay the setup cost. This must not start the microphone hardware.
+    func prepareForRecording() async
     func startRecording() async throws
     /// Excludes a short, app-generated output cue from the saved microphone
     /// stream without delaying the visual start of dictation.
@@ -46,6 +49,7 @@ public protocol AudioCaptureService {
 }
 
 public extension AudioCaptureService {
+    func prepareForRecording() async {}
     func suppressSystemFeedback(for duration: TimeInterval) {}
     func recoverPendingRecordings() async -> [CapturedAudio] { [] }
 }

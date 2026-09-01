@@ -118,6 +118,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
         let preparationSessionID = activeSessionID
         do {
             settings = try await settingsStore.load()
+            await audioCaptureService.prepareForRecording()
             await recoverInterruptedRecordings()
             try? await enforceHistoryRetention()
             await cleanupUnreferencedAudio()

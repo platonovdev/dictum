@@ -9,7 +9,6 @@ struct AudioCaptureRoute: Equatable, Sendable {
     let inputDeviceID: AudioObjectID
     let outputDeviceID: AudioObjectID
     let inputSampleRate: Double
-    let outputSampleRate: Double
 }
 
 @MainActor
@@ -21,6 +20,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
     // sample-rate change.
     private var audioEngine: AVAudioEngine?
     private var preparedRoute: AudioCaptureRoute?
+    private var isTapInstalled = false
     private let tapSink = TapSink()
     private let fileManager: FileManager
     private let pendingDirectoryURL: URL
@@ -52,6 +52,35 @@ public final class AVAudioCaptureService: AudioCaptureService {
         tapSink.suppressSystemFeedback(for: duration)
     }
 
+    public func prepareForRecording() async {
+        guard outputURL == nil, audioEngine?.isRunning != true else {
+            return
+        }
+
+        let route = Self.currentRoute()
+        if !Self.canReuseEngine(
+            hasEngine: audioEngine != nil,
+            preparedRoute: preparedRoute,
+            currentRoute: route
+        ) {
+            replaceAudioEngine()
+        }
+
+        guard let engine = audioEngine else {
+            return
+        }
+        let inputNode = engine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            return
+        }
+
+        installTapIfNeeded(on: inputNode)
+        engine.prepare()
+        preparedRoute = route
+        logger.info("Audio capture graph prepared without starting the microphone")
+    }
+
     public func startRecording() async throws {
         guard outputURL == nil, audioEngine?.isRunning != true else {
             throw AppError.audioCaptureFailed("A recording session is already active.")
@@ -71,20 +100,18 @@ public final class AVAudioCaptureService: AudioCaptureService {
         var engine = audioEngine ?? AVAudioEngine()
         audioEngine = engine
         var inputNode = engine.inputNode
-        var hardwareFormat = inputNode.inputFormat(forBus: 0)
         var format = inputNode.outputFormat(forBus: 0)
 
-        // A route can change between the Core Audio fingerprint read and graph
-        // access. Catch the stale-client signature that previously caused an
-        // uncaught installTap format-mismatch exception, then retry once with
-        // a clean engine. Passing nil to installTap below handles conversion.
-        if reusedEngine, !Self.formatsAreCompatible(hardwareFormat, format) {
-            logger.info("Discarding cached audio engine after a format change")
+        // A disconnected device can temporarily leave a cached node with an
+        // invalid output format. Retry once with a fresh graph. Do not compare
+        // the input and output bus formats here: AirPods legitimately change
+        // those formats while leaving the reusable capture route intact.
+        if reusedEngine, format.sampleRate <= 0 || format.channelCount == 0 {
+            logger.info("Discarding cached audio engine with an invalid format")
             replaceAudioEngine()
             engine = audioEngine ?? AVAudioEngine()
             audioEngine = engine
             inputNode = engine.inputNode
-            hardwareFormat = inputNode.inputFormat(forBus: 0)
             format = inputNode.outputFormat(forBus: 0)
             reusedEngine = false
         }
@@ -104,17 +131,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
         outputURL = url
         tapSink.configure(outputFile: outputFile, sampleRate: format.sampleRate)
 
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(
-            onBus: 0,
-            bufferSize: 2048,
-            // nil asks AVFoundation to use the input node's current native
-            // output format. Passing the previously queried format here can
-            // race a route change and terminate the recording task with a
-            // hardware/client format mismatch exception.
-            format: nil,
-            block: tapSink.makeTapHandler()
-        )
+        installTapIfNeeded(on: inputNode)
 
         do {
             engine.prepare()
@@ -127,7 +144,10 @@ public final class AVAudioCaptureService: AudioCaptureService {
                 "Audio capture ready in \(latencyMilliseconds, privacy: .public)ms; reusedEngine=\(reusedEngine, privacy: .public)"
             )
         } catch {
-            inputNode.removeTap(onBus: 0)
+            if isTapInstalled {
+                inputNode.removeTap(onBus: 0)
+                isTapInstalled = false
+            }
             engine.stop()
             _ = tapSink.finish()
             outputURL = nil
@@ -146,14 +166,16 @@ public final class AVAudioCaptureService: AudioCaptureService {
         guard let audioEngine else {
             throw AppError.audioCaptureFailed("The recording audio engine is unavailable.")
         }
-        audioEngine.inputNode.removeTap(onBus: 0)
         if audioEngine.isRunning {
-            audioEngine.stop()
+            // Unlike stop(), pause() turns off the microphone hardware while
+            // retaining the resources allocated by prepare(). This is the
+            // fast, privacy-safe path for the next hotkey press.
+            audioEngine.pause()
         }
 
-        // `removeTap` prevents new callbacks; `finish` then waits on the same
-        // lock used for every file write. This makes the last microphone buffer
-        // part of the recording before AVAudioFile is closed and validated.
+        // Pausing prevents new callbacks; `finish` then waits on the same lock
+        // used for every file write. The tap remains installed on the inactive
+        // graph so the next recording requires no graph mutation.
         let result = tapSink.finish()
         self.outputURL = nil
 
@@ -190,8 +212,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
 
     public func cancelRecording() async {
         if let audioEngine, audioEngine.isRunning {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            audioEngine.stop()
+            audioEngine.pause()
         }
         _ = tapSink.finish()
         if let outputURL {
@@ -211,18 +232,26 @@ public final class AVAudioCaptureService: AudioCaptureService {
         return preparedRoute == currentRoute
     }
 
-    static func formatsAreCompatible(
-        _ hardwareFormat: AVAudioFormat,
-        _ clientFormat: AVAudioFormat
-    ) -> Bool {
-        hardwareFormat.channelCount == clientFormat.channelCount
-            && abs(hardwareFormat.sampleRate - clientFormat.sampleRate) < 0.5
-    }
-
     private func replaceAudioEngine() {
         audioEngine?.stop()
         audioEngine = AVAudioEngine()
         preparedRoute = nil
+        isTapInstalled = false
+    }
+
+    private func installTapIfNeeded(on inputNode: AVAudioInputNode) {
+        guard !isTapInstalled else {
+            return
+        }
+        inputNode.installTap(
+            onBus: 0,
+            bufferSize: 2048,
+            // nil asks AVFoundation to follow the input node's native output
+            // format and avoids a route-change race with Bluetooth devices.
+            format: nil,
+            block: tapSink.makeTapHandler()
+        )
+        isTapInstalled = true
     }
 
     private static func currentRoute() -> AudioCaptureRoute? {
@@ -239,8 +268,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
         return AudioCaptureRoute(
             inputDeviceID: inputDeviceID,
             outputDeviceID: outputDeviceID,
-            inputSampleRate: nominalSampleRate(for: inputDeviceID),
-            outputSampleRate: nominalSampleRate(for: outputDeviceID)
+            inputSampleRate: nominalSampleRate(for: inputDeviceID)
         )
     }
 
