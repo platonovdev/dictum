@@ -1,20 +1,30 @@
 import AVFoundation
 import Application
+import CoreAudio
 import Domain
 import Foundation
+import OSLog
+
+struct AudioCaptureRoute: Equatable, Sendable {
+    let inputDeviceID: AudioObjectID
+    let outputDeviceID: AudioObjectID
+    let inputSampleRate: Double
+    let outputSampleRate: Double
+}
 
 @MainActor
 public final class AVAudioCaptureService: AudioCaptureService {
-    // Audio input formats can change while this menu bar app stays alive
-    // (AirPods, USB microphones, displays, and aggregate devices are common
-    // examples). A long-lived AVAudioEngine keeps the format it discovered
-    // when its input node was first accessed, which can make installTap raise
-    // an Objective-C exception after the route changes. Rebuild the engine for
-    // every recording so its graph always reflects the current device.
-    private var audioEngine = AVAudioEngine()
+    // Keep a configured engine between recordings. Rebuilding AVAudioEngine on
+    // every press makes Bluetooth devices tear down and recreate their private
+    // input/output aggregate, which can take several seconds. The route
+    // fingerprint below still forces a fresh graph after a real device or
+    // sample-rate change.
+    private var audioEngine: AVAudioEngine?
+    private var preparedRoute: AudioCaptureRoute?
     private let tapSink = TapSink()
     private let fileManager: FileManager
     private let pendingDirectoryURL: URL
+    private let logger = Logger(subsystem: "com.dictator.app", category: "audio-capture")
 
     private var outputURL: URL?
 
@@ -43,13 +53,41 @@ public final class AVAudioCaptureService: AudioCaptureService {
     }
 
     public func startRecording() async throws {
-        guard outputURL == nil, !audioEngine.isRunning else {
+        guard outputURL == nil, audioEngine?.isRunning != true else {
             throw AppError.audioCaptureFailed("A recording session is already active.")
         }
 
-        audioEngine = AVAudioEngine()
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let currentRoute = Self.currentRoute()
+        var reusedEngine = Self.canReuseEngine(
+            hasEngine: audioEngine != nil,
+            preparedRoute: preparedRoute,
+            currentRoute: currentRoute
+        )
+        if !reusedEngine {
+            replaceAudioEngine()
+        }
+
+        var engine = audioEngine ?? AVAudioEngine()
+        audioEngine = engine
+        var inputNode = engine.inputNode
+        var hardwareFormat = inputNode.inputFormat(forBus: 0)
+        var format = inputNode.outputFormat(forBus: 0)
+
+        // A route can change between the Core Audio fingerprint read and graph
+        // access. Catch the stale-client signature that previously caused an
+        // uncaught installTap format-mismatch exception, then retry once with
+        // a clean engine. Passing nil to installTap below handles conversion.
+        if reusedEngine, !Self.formatsAreCompatible(hardwareFormat, format) {
+            logger.info("Discarding cached audio engine after a format change")
+            replaceAudioEngine()
+            engine = audioEngine ?? AVAudioEngine()
+            audioEngine = engine
+            inputNode = engine.inputNode
+            hardwareFormat = inputNode.inputFormat(forBus: 0)
+            format = inputNode.outputFormat(forBus: 0)
+            reusedEngine = false
+        }
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw AppError.audioCaptureFailed("The selected microphone has no usable input format.")
         }
@@ -79,13 +117,22 @@ public final class AVAudioCaptureService: AudioCaptureService {
         )
 
         do {
-            audioEngine.prepare()
-            try audioEngine.start()
+            engine.prepare()
+            try engine.start()
+            preparedRoute = currentRoute ?? Self.currentRoute()
+            let latencyMilliseconds = Int(
+                ((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000).rounded()
+            )
+            logger.info(
+                "Audio capture ready in \(latencyMilliseconds, privacy: .public)ms; reusedEngine=\(reusedEngine, privacy: .public)"
+            )
         } catch {
             inputNode.removeTap(onBus: 0)
-            audioEngine.stop()
+            engine.stop()
             _ = tapSink.finish()
             outputURL = nil
+            audioEngine = nil
+            preparedRoute = nil
             try? fileManager.removeItem(at: url)
             throw AppError.audioCaptureFailed(error.localizedDescription)
         }
@@ -96,6 +143,9 @@ public final class AVAudioCaptureService: AudioCaptureService {
             throw AppError.audioCaptureFailed("No active recording session.")
         }
 
+        guard let audioEngine else {
+            throw AppError.audioCaptureFailed("The recording audio engine is unavailable.")
+        }
         audioEngine.inputNode.removeTap(onBus: 0)
         if audioEngine.isRunning {
             audioEngine.stop()
@@ -139,7 +189,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
     }
 
     public func cancelRecording() async {
-        if audioEngine.isRunning {
+        if let audioEngine, audioEngine.isRunning {
             audioEngine.inputNode.removeTap(onBus: 0)
             audioEngine.stop()
         }
@@ -148,6 +198,95 @@ public final class AVAudioCaptureService: AudioCaptureService {
             try? fileManager.removeItem(at: outputURL)
         }
         outputURL = nil
+    }
+
+    static func canReuseEngine(
+        hasEngine: Bool,
+        preparedRoute: AudioCaptureRoute?,
+        currentRoute: AudioCaptureRoute?
+    ) -> Bool {
+        guard hasEngine, let preparedRoute, let currentRoute else {
+            return false
+        }
+        return preparedRoute == currentRoute
+    }
+
+    static func formatsAreCompatible(
+        _ hardwareFormat: AVAudioFormat,
+        _ clientFormat: AVAudioFormat
+    ) -> Bool {
+        hardwareFormat.channelCount == clientFormat.channelCount
+            && abs(hardwareFormat.sampleRate - clientFormat.sampleRate) < 0.5
+    }
+
+    private func replaceAudioEngine() {
+        audioEngine?.stop()
+        audioEngine = AVAudioEngine()
+        preparedRoute = nil
+    }
+
+    private static func currentRoute() -> AudioCaptureRoute? {
+        guard
+            let inputDeviceID = defaultDevice(
+                selector: kAudioHardwarePropertyDefaultInputDevice
+            ),
+            let outputDeviceID = defaultDevice(
+                selector: kAudioHardwarePropertyDefaultOutputDevice
+            )
+        else {
+            return nil
+        }
+        return AudioCaptureRoute(
+            inputDeviceID: inputDeviceID,
+            outputDeviceID: outputDeviceID,
+            inputSampleRate: nominalSampleRate(for: inputDeviceID),
+            outputSampleRate: nominalSampleRate(for: outputDeviceID)
+        )
+    }
+
+    private static func defaultDevice(
+        selector: AudioObjectPropertySelector
+    ) -> AudioObjectID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceID = kAudioObjectUnknown
+        var byteCount = UInt32(MemoryLayout<AudioObjectID>.size)
+        let systemObject = AudioObjectID(bitPattern: kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyData(
+            systemObject,
+            &address,
+            0,
+            nil,
+            &byteCount,
+            &deviceID
+        ) == noErr, deviceID != kAudioObjectUnknown else {
+            return nil
+        }
+        return deviceID
+    }
+
+    private static func nominalSampleRate(for deviceID: AudioObjectID) -> Double {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var sampleRate: Float64 = 0
+        var byteCount = UInt32(MemoryLayout<Float64>.size)
+        guard AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &byteCount,
+            &sampleRate
+        ) == noErr else {
+            return 0
+        }
+        return sampleRate
     }
 
     public func recoverPendingRecordings() async -> [CapturedAudio] {

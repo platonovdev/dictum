@@ -166,6 +166,7 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
     }
 
     public func startDictation() async {
+        let requestedAt = ProcessInfo.processInfo.systemUptime
         cancelScheduledModelUnload()
         if case .error = state {
             await resetSession()
@@ -194,7 +195,12 @@ public final class DictationSessionCoordinator: DictationSessionCoordinating {
 
             let startedAt = Date()
             recordingStartedAt = startedAt
-            logger.info("Recording started for session \(sessionID.uuidString, privacy: .public)")
+            let startLatencyMilliseconds = Int(
+                ((ProcessInfo.processInfo.systemUptime - requestedAt) * 1_000).rounded()
+            )
+            logger.info(
+                "Recording started for session \(sessionID.uuidString, privacy: .public); startLatency=\(startLatencyMilliseconds, privacy: .public)ms"
+            )
             transition(to: .recording(startedAt: startedAt))
             let pausedActiveMedia = settings.pauseMediaDuringRecording
                 && (mediaPlaybackService?.pauseActivePlayback() == true)
