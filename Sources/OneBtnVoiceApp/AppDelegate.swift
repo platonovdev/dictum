@@ -100,14 +100,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func registerHotkey(with configuration: HotkeyConfiguration) {
+        let caretAnchorProvider = container.caretAnchorProvider
         do {
             try container.hotkeyService.startListening(configuration: configuration) { [weak self] event in
                 guard let self else {
                     return
                 }
 
+                let caretLookup: Task<CGRect?, Never>? = switch event {
+                case .pressed, .pressedAt:
+                    Task.detached(priority: .userInitiated) {
+                        caretAnchorProvider.currentCaretFrame()
+                    }
+                default:
+                    nil
+                }
+
                 Task { @MainActor in
                     await self.container.coordinator.handleHotkeyEvent(event)
+                    if let caretLookup {
+                        self.overlayWindowController.setNextAccessibilityCaretFrame(
+                            await caretLookup.value
+                        )
+                    }
                 }
             }
         } catch {

@@ -18,6 +18,7 @@ final class AppDependencyContainer {
     let audioArchive = FileSystemDictationAudioArchive()
     let soundFeedbackService = BundledDictationSoundFeedbackService()
     let mediaPlaybackService = SystemMediaPlaybackService()
+    let caretAnchorProvider = AccessibilityCaretAnchorProvider()
 
     let loadSettingsUseCase: LoadSettingsUseCase
     let updateSettingsUseCase: UpdateSettingsUseCase

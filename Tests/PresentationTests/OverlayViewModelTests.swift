@@ -13,6 +13,36 @@ func overlayTimerStaysCompactForLongRecordings() {
 }
 
 @Test
+func accessibilityCaretCoordinatesConvertToAppKitScreenCoordinates() {
+    let converted = CaretOverlayPlacement.appKitFrame(
+        fromAccessibilityFrame: CGRect(x: 100, y: 200, width: 1, height: 20),
+        primaryScreenMaxY: 1_080
+    )
+
+    #expect(converted == CGRect(x: 100, y: 860, width: 1, height: 20))
+}
+
+@Test
+func caretOverlayPrefersAboveThenFallsBelowAndStaysOnScreen() {
+    let panelSize = CGSize(width: 162, height: 40)
+    let visibleFrame = CGRect(x: 0, y: 0, width: 1_000, height: 800)
+
+    let normal = CaretOverlayPlacement.panelFrame(
+        panelSize: panelSize,
+        caretFrame: CGRect(x: 500, y: 300, width: 1, height: 18),
+        visibleFrame: visibleFrame
+    )
+    #expect(normal.origin == CGPoint(x: 419.5, y: 326))
+
+    let nearTopRight = CaretOverlayPlacement.panelFrame(
+        panelSize: panelSize,
+        caretFrame: CGRect(x: 995, y: 770, width: 1, height: 18),
+        visibleFrame: visibleFrame
+    )
+    #expect(nearTopRight.origin == CGPoint(x: 830, y: 722))
+}
+
+@Test
 @MainActor
 func overlayViewModelShowsStatusTextOutsideRecording() async {
     let coordinator = MockCoordinator()

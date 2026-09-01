@@ -9,6 +9,7 @@ public final class OverlayWindowController {
     private var cancellables: Set<AnyCancellable> = []
     private var isEnabled = true
     private var lastRecordingWidth = OverlayLayout.initialWidth
+    private var accessibilityCaretFrame: CGRect?
 
     public init(viewModel: OverlayViewModel) {
         self.viewModel = viewModel
@@ -93,6 +94,16 @@ public final class OverlayWindowController {
 
     public func hide() {
         panel.orderOut(nil)
+        accessibilityCaretFrame = nil
+    }
+
+    /// Supplies the caret captured at the same instant as the hotkey press.
+    /// Late results are ignored so an already-visible panel never jumps.
+    public func setNextAccessibilityCaretFrame(_ frame: CGRect?) {
+        guard !panel.isVisible else {
+            return
+        }
+        accessibilityCaretFrame = frame
     }
 
     public func setEnabled(_ isEnabled: Bool) {
@@ -105,11 +116,31 @@ public final class OverlayWindowController {
     }
 
     private func targetFrame(width: CGFloat) -> NSRect? {
-        guard let screen = NSScreen.main else {
+        guard let fallbackScreen = NSScreen.main else {
             return nil
         }
 
-        let visible = screen.visibleFrame
+        if let accessibilityCaretFrame,
+           let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+            ?? NSScreen.screens.first {
+            let caretFrame = CaretOverlayPlacement.appKitFrame(
+                fromAccessibilityFrame: accessibilityCaretFrame,
+                primaryScreenMaxY: primaryScreen.frame.maxY
+            )
+            let anchorPoint = CGPoint(x: caretFrame.midX, y: caretFrame.midY)
+            let caretScreen = NSScreen.screens.first(where: {
+                $0.frame.contains(anchorPoint)
+            })
+            if let caretScreen {
+                return CaretOverlayPlacement.panelFrame(
+                    panelSize: CGSize(width: width, height: OverlayLayout.height),
+                    caretFrame: caretFrame,
+                    visibleFrame: caretScreen.visibleFrame
+                )
+            }
+        }
+
+        let visible = fallbackScreen.visibleFrame
         let x = visible.midX - width / 2
         let y = visible.minY + 18
         return NSRect(x: x, y: y, width: width, height: OverlayLayout.height)
@@ -169,5 +200,48 @@ public final class OverlayWindowController {
                 + measuredTextWidth
             return min(max(naturalWidth, lastRecordingWidth), 260)
         }
+    }
+}
+
+enum CaretOverlayPlacement {
+    private static let edgeMargin: CGFloat = 8
+    private static let caretGap: CGFloat = 8
+
+    static func appKitFrame(
+        fromAccessibilityFrame frame: CGRect,
+        primaryScreenMaxY: CGFloat
+    ) -> CGRect {
+        CGRect(
+            x: frame.minX,
+            y: primaryScreenMaxY - frame.maxY,
+            width: frame.width,
+            height: frame.height
+        )
+    }
+
+    static func panelFrame(
+        panelSize: CGSize,
+        caretFrame: CGRect,
+        visibleFrame: CGRect
+    ) -> CGRect {
+        let minimumX = visibleFrame.minX + edgeMargin
+        let maximumX = visibleFrame.maxX - edgeMargin - panelSize.width
+        let centeredX = caretFrame.midX - panelSize.width / 2
+        let x = min(max(centeredX, minimumX), max(minimumX, maximumX))
+
+        let aboveY = caretFrame.maxY + caretGap
+        let maximumY = visibleFrame.maxY - edgeMargin - panelSize.height
+        let belowY = caretFrame.minY - caretGap - panelSize.height
+        let minimumY = visibleFrame.minY + edgeMargin
+        let y: CGFloat
+        if aboveY <= maximumY {
+            y = aboveY
+        } else if belowY >= minimumY {
+            y = belowY
+        } else {
+            y = min(max(aboveY, minimumY), max(minimumY, maximumY))
+        }
+
+        return CGRect(origin: CGPoint(x: x, y: y), size: panelSize)
     }
 }
