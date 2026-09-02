@@ -399,7 +399,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
     }
 }
 
-private final class TapSink: @unchecked Sendable {
+final class TapSink: @unchecked Sendable {
     struct FinishResult {
         let writtenFrames: AVAudioFramePosition
         let sampleRate: Double

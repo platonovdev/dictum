@@ -8,7 +8,9 @@ final class AppDependencyContainer {
     let settingsStore = UserDefaultsSettingsStore()
     let historyStore = SQLiteDictationHistoryStore()
     let permissionService = SystemPermissionService()
-    let audioCaptureService = AVAudioCaptureService()
+    // AUHAL is configured as input-only, so a sleeping HDMI/DisplayPort output
+    // can never block microphone startup.
+    let audioCaptureService = AUHALAudioCaptureService()
     // Handy's whisper.cpp + Metal execution path is the default local engine.
     // Native Whisper/Metal work lives in a supervised helper so a decoder
     // crash or hang cannot freeze the menu bar app or lose the recording.
